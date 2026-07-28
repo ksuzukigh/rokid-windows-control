@@ -23,6 +23,61 @@ internal sealed class ScrcpyProcessManager : IDisposable
 
     public void StartStandard(string serial)
     {
+        Start(
+            "背景なし",
+            serial,
+            [
+                "--no-audio",
+                "--keyboard=disabled",
+                "--window-title=Rokid AI Glasses RV101（Windows操作モード）",
+            ]);
+    }
+
+    public void StartLiveHud(string serial, int width, int height)
+    {
+        Start(
+            "ライブHUD",
+            serial,
+            [
+                "--no-audio",
+                "--max-fps=15",
+                "--keyboard=disabled",
+                "--window-borderless",
+                $"--window-width={width}",
+                $"--window-height={height}",
+                "--window-x=-30000",
+                "--window-y=-30000",
+                "--window-title=Rokid-Vision-HUD-Source",
+            ]);
+    }
+
+    public void StartLiveCamera(string serial, int width, int height)
+    {
+        Start(
+            "ライブカメラ",
+            serial,
+            [
+                "--video-source=camera",
+                "--camera-ar=4:3",
+                "--max-size=640",
+                "--camera-fps=15",
+                "--orientation=270",
+                "--no-audio",
+                "--no-control",
+                "--window-borderless",
+                $"--window-width={width}",
+                $"--window-height={height}",
+                "--window-x=-30000",
+                "--window-y=-30000",
+                "--window-title=Rokid-Vision-Camera-Source",
+            ]);
+    }
+
+    private void Start(
+        string sessionName,
+        string serial,
+        IReadOnlyList<string> arguments)
+    {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_process is not null)
         {
@@ -36,13 +91,9 @@ internal sealed class ScrcpyProcessManager : IDisposable
             CreateNoWindow = true,
             WorkingDirectory = _resources.VendorDirectory,
         };
-        foreach (var argument in new[]
-                 {
-                     "--serial", serial,
-                     "--no-audio",
-                     "--keyboard=disabled",
-                     "--window-title=Rokid AI Glasses RV101（Windows操作モード）",
-                 })
+        startInfo.ArgumentList.Add("--serial");
+        startInfo.ArgumentList.Add(serial);
+        foreach (var argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);
         }
@@ -65,7 +116,7 @@ internal sealed class ScrcpyProcessManager : IDisposable
         }
 
         _process = process;
-        _logger.Log($"scrcpy開始 pid={process.Id} serial={serial}");
+        _logger.Log($"scrcpy開始 mode={sessionName} pid={process.Id}");
     }
 
     public void Dispose()

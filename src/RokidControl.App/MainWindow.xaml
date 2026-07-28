@@ -10,8 +10,8 @@
         Background="#0D1311"
         Foreground="White"
         Closing="Window_Closing">
-    <Grid Margin="36">
-        <Grid x:Name="ModePanel">
+    <Grid>
+        <Grid x:Name="ModePanel" Margin="36">
             <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="Rokid Control"
                            FontSize="30"
@@ -51,7 +51,9 @@
                         Padding="22,8" />
             </StackPanel>
         </Grid>
-        <Grid x:Name="ProgressPanel" Visibility="Collapsed">
+        <Grid x:Name="ProgressPanel"
+              Margin="36"
+              Visibility="Collapsed">
             <StackPanel VerticalAlignment="Center">
                 <ProgressBar Height="5"
                              IsIndeterminate="True"
@@ -72,7 +74,9 @@
                         HorizontalAlignment="Center" />
             </StackPanel>
         </Grid>
-        <Grid x:Name="ErrorPanel" Visibility="Collapsed">
+        <Grid x:Name="ErrorPanel"
+              Margin="36"
+              Visibility="Collapsed">
             <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="開始できませんでした"
                            FontSize="22"
@@ -94,6 +98,41 @@
                 </StackPanel>
             </StackPanel>
         </Grid>
+        <Grid x:Name="LivePanel"
+              Background="Black"
+              Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Image x:Name="LiveImage"
+                   Grid.Row="0"
+                   Stretch="Uniform"
+                   SnapsToDevicePixels="True"
+                   MouseLeftButtonDown="LiveImage_MouseLeftButtonDown"
+                   MouseRightButtonDown="LiveImage_MouseRightButtonDown" />
+            <Border Grid.Row="1"
+                    Background="#E617211D"
+                    BorderBrush="#384C43"
+                    BorderThickness="0,1,0,0"
+                    Padding="18,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="文字・アイコンの見やすさ"
+                               VerticalAlignment="Center"
+                               Margin="0,0,14,0" />
+                    <Slider x:Name="LiveVisibilitySlider"
+                            Grid.Column="1"
+                            Minimum="0"
+                            Maximum="1"
+                            Value="0.9"
+                            TickFrequency="0.1"
+                            ValueChanged="LiveVisibilitySlider_ValueChanged" />
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Window>
-

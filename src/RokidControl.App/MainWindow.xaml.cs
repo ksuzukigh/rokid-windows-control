@@ -1,7 +1,11 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using RokidControl.App.Services;
 using RokidControl.Core.Connections;
+using RokidControl.Core.Imaging;
 using RokidControl.Core.Processes;
 
 namespace RokidControl.App;
@@ -12,7 +16,9 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _operationCancellation;
     private RokidConnectionManager? _connection;
     private ScrcpyProcessManager? _scrcpy;
+    private LiveSessionController? _liveSession;
     private WindowsKeyboardController? _keyboard;
+    private WriteableBitmap? _liveBitmap;
     private DisplayMode? _selectedMode;
     private bool _isClosing;
     private bool _shutdownCompleted;
@@ -97,12 +103,18 @@ public partial class MainWindow : Window
             await StartWindowsModeWithRetryAsync(cancellationToken);
             var screenSize = await _connection.GetScreenSizeAsync(cancellationToken);
             _logger.Log(
-                $"接続成功 serial={serial} size={screenSize.Width}x{screenSize.Height}");
+                $"接続成功 size={screenSize.Width}x{screenSize.Height}");
 
             if (_selectedMode == DisplayMode.Live)
             {
-                throw new NotSupportedException(
-                    "ライブ映像のWindows Graphics Capture試験は実装中です。背景なし（省電力）は先に実機試験できます。");
+                ShowProgress("ライブ映像を準備しています…");
+                await StartLiveSessionAsync(
+                    resources,
+                    serial,
+                    screenSize.Width,
+                    screenSize.Height,
+                    cancellationToken);
+                return;
             }
 
             ShowProgress("画面を受信しています…");
@@ -159,6 +171,54 @@ public partial class MainWindow : Window
             keyboard.Dispose();
             scrcpy.Exited -= Scrcpy_Exited;
             scrcpy.Dispose();
+            throw;
+        }
+    }
+
+    private async Task StartLiveSessionAsync(
+        AppResources resources,
+        string serial,
+        int screenWidth,
+        int screenHeight,
+        CancellationToken cancellationToken)
+    {
+        if (_connection is null)
+        {
+            throw new InvalidOperationException("接続管理を開始できませんでした。");
+        }
+
+        var liveSession = new LiveSessionController(
+            resources,
+            _logger,
+            screenWidth,
+            screenHeight);
+        var keyboard = new WindowsKeyboardController(
+            _connection,
+            _logger,
+            screenWidth,
+            screenHeight);
+        try
+        {
+            liveSession.Visibility = LiveVisibilitySlider.Value;
+            liveSession.FrameReady += LiveSession_FrameReady;
+            liveSession.Failed += LiveSession_Failed;
+            keyboard.QuitRequested += Keyboard_QuitRequested;
+            await liveSession.StartAsync(
+                serial,
+                new Progress<string>(ShowProgress),
+                cancellationToken);
+            keyboard.Start(Environment.ProcessId);
+            _liveSession = liveSession;
+            _keyboard = keyboard;
+            ShowLivePanel();
+        }
+        catch
+        {
+            keyboard.QuitRequested -= Keyboard_QuitRequested;
+            keyboard.Dispose();
+            liveSession.FrameReady -= LiveSession_FrameReady;
+            liveSession.Failed -= LiveSession_Failed;
+            liveSession.Dispose();
             throw;
         }
     }
@@ -232,7 +292,7 @@ public partial class MainWindow : Window
                 serial,
                 screenSize.Width,
                 screenSize.Height);
-            _logger.Log($"自動再接続成功 serial={serial}");
+            _logger.Log("自動再接続成功");
         }
         catch (OperationCanceledException) when (_isClosing)
         {
@@ -254,11 +314,168 @@ public partial class MainWindow : Window
         Dispatcher.InvokeAsync(Close);
     }
 
+    private void LiveSession_FrameReady(
+        object? sender,
+        LiveFrameEventArgs eventArguments)
+    {
+        Dispatcher.InvokeAsync(() => DisplayLiveFrame(eventArguments.Frame));
+    }
+
+    private void LiveSession_Failed(Exception exception)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (_isClosing)
+            {
+                return;
+            }
+
+            _logger.Log($"ライブ映像エラー {exception.Message}");
+            StopLocalSession();
+            ShowError(exception.Message);
+        });
+    }
+
+    private void DisplayLiveFrame(BgraFrame frame)
+    {
+        Dispatcher.VerifyAccess();
+        if (_liveBitmap is null ||
+            _liveBitmap.PixelWidth != frame.Width ||
+            _liveBitmap.PixelHeight != frame.Height)
+        {
+            _liveBitmap = new WriteableBitmap(
+                frame.Width,
+                frame.Height,
+                96,
+                96,
+                PixelFormats.Bgra32,
+                null);
+            LiveImage.Source = _liveBitmap;
+        }
+
+        _liveBitmap.WritePixels(
+            new Int32Rect(0, 0, frame.Width, frame.Height),
+            frame.Pixels,
+            frame.Stride,
+            0);
+    }
+
+    private void ShowLivePanel()
+    {
+        Dispatcher.VerifyAccess();
+        ModePanel.Visibility = Visibility.Collapsed;
+        ProgressPanel.Visibility = Visibility.Collapsed;
+        ErrorPanel.Visibility = Visibility.Collapsed;
+        LivePanel.Visibility = Visibility.Visible;
+        Title = "Rokid AI Glasses RV101（ライブ映像）";
+        MinWidth = 360;
+        MinHeight = 480;
+        Width = 480;
+        Height = 720;
+        Show();
+        Activate();
+    }
+
+    private void LiveVisibilitySlider_ValueChanged(
+        object sender,
+        RoutedPropertyChangedEventArgs<double> eventArguments)
+    {
+        if (_liveSession is not null)
+        {
+            _liveSession.Visibility = eventArguments.NewValue;
+        }
+    }
+
+    private async void LiveImage_MouseLeftButtonDown(
+        object sender,
+        MouseButtonEventArgs eventArguments)
+    {
+        if (_connection is null ||
+            !TryMapLivePoint(
+                eventArguments.GetPosition(LiveImage),
+                out var x,
+                out var y))
+        {
+            return;
+        }
+
+        try
+        {
+            await _connection.TapAsync(
+                x,
+                y,
+                _operationCancellation?.Token ?? CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _logger.Log($"ライブ映像タップ失敗 {exception.Message}");
+        }
+    }
+
+    private async void LiveImage_MouseRightButtonDown(
+        object sender,
+        MouseButtonEventArgs eventArguments)
+    {
+        if (_connection is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _connection.SendKeyEventAsync(
+                "KEYCODE_BACK",
+                _operationCancellation?.Token ?? CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _logger.Log($"ライブ映像戻る操作失敗 {exception.Message}");
+        }
+    }
+
+    private bool TryMapLivePoint(Point point, out int x, out int y)
+    {
+        x = 0;
+        y = 0;
+        if (_liveBitmap is null ||
+            LiveImage.ActualWidth <= 0 ||
+            LiveImage.ActualHeight <= 0)
+        {
+            return false;
+        }
+
+        var scale = Math.Min(
+            LiveImage.ActualWidth / _liveBitmap.PixelWidth,
+            LiveImage.ActualHeight / _liveBitmap.PixelHeight);
+        var displayedWidth = _liveBitmap.PixelWidth * scale;
+        var displayedHeight = _liveBitmap.PixelHeight * scale;
+        var offsetX = (LiveImage.ActualWidth - displayedWidth) / 2;
+        var offsetY = (LiveImage.ActualHeight - displayedHeight) / 2;
+        if (point.X < offsetX ||
+            point.Y < offsetY ||
+            point.X >= offsetX + displayedWidth ||
+            point.Y >= offsetY + displayedHeight)
+        {
+            return false;
+        }
+
+        x = Math.Clamp(
+            (int)((point.X - offsetX) / scale),
+            0,
+            _liveBitmap.PixelWidth - 1);
+        y = Math.Clamp(
+            (int)((point.Y - offsetY) / scale),
+            0,
+            _liveBitmap.PixelHeight - 1);
+        return true;
+    }
+
     private void ShowProgress(string message)
     {
         Dispatcher.VerifyAccess();
         ModePanel.Visibility = Visibility.Collapsed;
         ErrorPanel.Visibility = Visibility.Collapsed;
+        LivePanel.Visibility = Visibility.Collapsed;
         ProgressPanel.Visibility = Visibility.Visible;
         StatusText.Text = message;
     }
@@ -269,6 +486,7 @@ public partial class MainWindow : Window
         Activate();
         ModePanel.Visibility = Visibility.Collapsed;
         ProgressPanel.Visibility = Visibility.Collapsed;
+        LivePanel.Visibility = Visibility.Collapsed;
         ErrorPanel.Visibility = Visibility.Visible;
         ErrorText.Text = message;
     }
@@ -330,6 +548,17 @@ public partial class MainWindow : Window
             _scrcpy.Dispose();
             _scrcpy = null;
         }
+
+        if (_liveSession is not null)
+        {
+            _liveSession.FrameReady -= LiveSession_FrameReady;
+            _liveSession.Failed -= LiveSession_Failed;
+            _liveSession.Dispose();
+            _liveSession = null;
+        }
+
+        _liveBitmap = null;
+        LiveImage.Source = null;
     }
 }
 

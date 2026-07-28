@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RokidControl.Core\RokidControl.Core.csproj" />
+    <ProjectReference Include="..\RokidControl.WindowsCapture\RokidControl.WindowsCapture.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
