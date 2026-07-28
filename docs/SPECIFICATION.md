@@ -7,7 +7,7 @@
 - 対応元: Rokid Control for macOS 1.2.0
 - 対象機器: Rokid AI Glasses RV101
 - 文書状態: 実装開始版
-- 更新日: 2026-07-28
+- 更新日: 2026-07-29
 
 ## 2. 目的
 
@@ -37,9 +37,9 @@ Windows 10は技術的に動作する可能性があるが、Microsoftの通常�
 
 - 表示名: Rokid Control
 - リポジトリ名: `rokid-windows-control`
-- 配布形式: 自己完結型x64アプリ
-- 正式配布候補: `Rokid-Control-Setup.exe`
-- 補助配布候補: ポータブルZIP
+- 配布形式: 自己完結型x64アプリを収録したポータブルZIP
+- 正式配布物: `Rokid-Control-Windows-x64-<version>.zip`
+- 配布場所: GitHub Releases
 - インストール範囲: 現在のユーザー
 - 通常利用時の管理者権限: 不要
 - .NETランタイム、ADB、scrcpy、必要DLLは配布物へ同梱
@@ -81,7 +81,7 @@ Rokid以外のWi-Fi ADB機器へ接続した場合は直ちに切断し、その
 ### 6.3 保存情報
 
 - Wi-Fiアドレス: `%LOCALAPPDATA%\Rokid Control\wifi-address.txt`
-- 設定: `%LOCALAPPDATA%\Rokid Control\settings.json`
+- ライブ映像の見やすさ: `%LOCALAPPDATA%\Rokid Control\live-visibility.txt`
 - ログ: `%LOCALAPPDATA%\Rokid Control\Logs\Rokid Control.log`
 
 保存済みアドレスがRokid以外を指した場合は削除する。
@@ -254,8 +254,9 @@ scrcpyが5秒以内に2回以上終了した場合、自動再起動を止めて
 ### 12.1 コード署名
 
 - 公開する自作の実行ファイルとDLLは、Smart App Controlが信頼できるRSAコード署名を付ける。
-- GitHub Releasesで配布する場合はMicrosoft Artifact Signingを第一候補とする。
-- Microsoft Storeで配布する場合はMSIXとStore署名を使用する。
+- GitHub ReleasesからZIPで配布し、SignPath Foundationの審査承認後に署名する。
+- Microsoft Artifact Signing Public Trustは日本在住の個人が対象外のため初版では使用しない。対象地域が拡大した場合は再検討する。
+- Microsoft StoreとMSIXでの配布は対象外とする。
 - 自己署名証明書は一般配布に使用しない。
 - 開発や試験のためにSmart App Control、Microsoft Defender、PowerShell実行ポリシーを無効化しない。
 - 詳細は`docs/CODE-SIGNING.md`に定める。

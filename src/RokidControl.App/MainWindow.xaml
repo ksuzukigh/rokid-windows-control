@@ -105,12 +105,25 @@
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-            <Image x:Name="LiveImage"
-                   Grid.Row="0"
-                   Stretch="Uniform"
-                   SnapsToDevicePixels="True"
-                   MouseLeftButtonDown="LiveImage_MouseLeftButtonDown"
-                   MouseRightButtonDown="LiveImage_MouseRightButtonDown" />
+            <Grid Grid.Row="0">
+                <Image x:Name="LiveImage"
+                       Stretch="Uniform"
+                       SnapsToDevicePixels="True"
+                       SizeChanged="LiveImage_SizeChanged"
+                       MouseLeftButtonDown="LiveImage_MouseLeftButtonDown"
+                       MouseRightButtonDown="LiveImage_MouseRightButtonDown" />
+                <Canvas x:Name="NavigationOverlay"
+                        IsHitTestVisible="False">
+                    <Ellipse x:Name="NavigationSelectionOuter"
+                             Visibility="Collapsed"
+                             Stroke="#D9000000"
+                             StrokeThickness="9" />
+                    <Ellipse x:Name="NavigationSelectionRing"
+                             Visibility="Collapsed"
+                             Stroke="#FF73F4C7"
+                             StrokeThickness="4" />
+                </Canvas>
+            </Grid>
             <Border Grid.Row="1"
                     Background="#E617211D"
                     BorderBrush="#384C43"

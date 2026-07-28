@@ -31,3 +31,19 @@ jobs:
 
       - name: Windows Graphics Capture probe
         run: dotnet run --project tools/RokidControl.CaptureProbe/RokidControl.CaptureProbe.csproj --configuration Release --no-restore
+
+      - name: Build unsigned release-candidate package
+        shell: pwsh
+        run: ./tools/package.ps1 -Version 0.0.0-ci
+
+      - name: Verify release-candidate contents
+        shell: pwsh
+        run: |
+          $archive = Get-Item artifacts/package/Rokid-Control-Windows-x64-0.0.0-ci.zip
+          $checksum = Get-Content "$($archive.FullName).sha256"
+          if ($archive.Length -le 0) {
+            throw 'Release-candidate ZIP is empty.'
+          }
+          if ($checksum -notmatch '^[0-9a-f]{64}  Rokid-Control-Windows-x64-0\.0\.0-ci\.zip$') {
+            throw 'Release-candidate checksum is invalid.'
+          }

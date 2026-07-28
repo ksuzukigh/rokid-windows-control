@@ -1,11 +1,13 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using RokidControl.App.Services;
 using RokidControl.Core.Connections;
 using RokidControl.Core.Imaging;
+using RokidControl.Core.Navigation;
 using RokidControl.Core.Processes;
 
 namespace RokidControl.App;
@@ -18,16 +20,23 @@ public partial class MainWindow : Window
     private ScrcpyProcessManager? _scrcpy;
     private LiveSessionController? _liveSession;
     private WindowsKeyboardController? _keyboard;
+    private StandardNavigationOverlay? _standardNavigationOverlay;
     private WriteableBitmap? _liveBitmap;
     private DisplayMode? _selectedMode;
     private bool _isClosing;
     private bool _shutdownCompleted;
     private bool _isRecovering;
+    private bool _preferencesLoaded;
+    private int _liveScreenWidth;
+    private int _liveScreenHeight;
+    private LowerNavigationItem? _selectedNavigationItem;
 
     public MainWindow()
     {
         InitializeComponent();
         _logger = new AppLogger(AppPaths.LogFile);
+        LiveVisibilitySlider.Value = AppPreferences.LoadLiveVisibility();
+        _preferencesLoaded = true;
         _logger.Log("=== Rokid Control started ===");
     }
 
@@ -58,6 +67,10 @@ public partial class MainWindow : Window
         if (_selectedMode == DisplayMode.Standard && _connection is not null)
         {
             await RecoverStandardSessionAsync();
+        }
+        else if (_selectedMode == DisplayMode.Live && _connection is not null)
+        {
+            await RecoverLiveSessionAsync();
         }
         else if (_selectedMode is not null)
         {
@@ -155,19 +168,30 @@ public partial class MainWindow : Window
                 _logger,
                 screenWidth,
                 screenHeight);
+        StandardNavigationOverlay? navigationOverlay = null;
         try
         {
             scrcpy.Exited += Scrcpy_Exited;
             scrcpy.StartStandard(serial);
             keyboard.QuitRequested += Keyboard_QuitRequested;
+            keyboard.NavigationSelectionChanged +=
+                Keyboard_NavigationSelectionChanged;
+            navigationOverlay = new StandardNavigationOverlay(
+                scrcpy.ProcessId,
+                screenWidth,
+                screenHeight);
             keyboard.Start(scrcpy.ProcessId);
             _scrcpy = scrcpy;
             _keyboard = keyboard;
+            _standardNavigationOverlay = navigationOverlay;
             Hide();
         }
         catch
         {
             keyboard.QuitRequested -= Keyboard_QuitRequested;
+            keyboard.NavigationSelectionChanged -=
+                Keyboard_NavigationSelectionChanged;
+            navigationOverlay?.Dispose();
             keyboard.Dispose();
             scrcpy.Exited -= Scrcpy_Exited;
             scrcpy.Dispose();
@@ -203,11 +227,16 @@ public partial class MainWindow : Window
             liveSession.FrameReady += LiveSession_FrameReady;
             liveSession.Failed += LiveSession_Failed;
             keyboard.QuitRequested += Keyboard_QuitRequested;
+            keyboard.NavigationSelectionChanged +=
+                Keyboard_NavigationSelectionChanged;
             await liveSession.StartAsync(
                 serial,
                 new Progress<string>(ShowProgress),
                 cancellationToken);
             keyboard.Start(Environment.ProcessId);
+            _liveScreenWidth = screenWidth;
+            _liveScreenHeight = screenHeight;
+            _selectedNavigationItem = null;
             _liveSession = liveSession;
             _keyboard = keyboard;
             ShowLivePanel();
@@ -215,6 +244,8 @@ public partial class MainWindow : Window
         catch
         {
             keyboard.QuitRequested -= Keyboard_QuitRequested;
+            keyboard.NavigationSelectionChanged -=
+                Keyboard_NavigationSelectionChanged;
             keyboard.Dispose();
             liveSession.FrameReady -= LiveSession_FrameReady;
             liveSession.Failed -= LiveSession_Failed;
@@ -325,15 +356,63 @@ public partial class MainWindow : Window
     {
         Dispatcher.InvokeAsync(() =>
         {
-            if (_isClosing)
+            _ = RecoverLiveSessionAsync(exception);
+        });
+    }
+
+    private async Task RecoverLiveSessionAsync(Exception? cause = null)
+    {
+        if (_isClosing || _isRecovering || _connection is null)
+        {
+            return;
+        }
+
+        _isRecovering = true;
+        if (cause is not null)
+        {
+            _logger.Log($"Live session stopped unexpectedly: {cause}");
+        }
+
+        StopLocalSession();
+        Show();
+        ShowProgress("ライブ映像を再接続しています…");
+
+        try
+        {
+            var cancellationToken = _operationCancellation?.Token ??
+                CancellationToken.None;
+            var serial = await _connection.ReconnectAsync(cancellationToken);
+            if (serial is null)
             {
-                return;
+                throw new RokidConnectionException(
+                    RokidConnectionError.NoDevice);
             }
 
-            _logger.Log($"ライブ映像エラー {exception.Message}");
-            StopLocalSession();
+            await StartWindowsModeWithRetryAsync(cancellationToken);
+            var screenSize = await _connection.GetScreenSizeAsync(
+                cancellationToken);
+            var resources = AppResources.Locate();
+            await StartLiveSessionAsync(
+                resources,
+                serial,
+                screenSize.Width,
+                screenSize.Height,
+                cancellationToken);
+            _logger.Log("Live session reconnected successfully.");
+        }
+        catch (OperationCanceledException) when (_isClosing)
+        {
+            // Normal shutdown.
+        }
+        catch (Exception exception)
+        {
+            _logger.Log($"Live session reconnection failed: {exception}");
             ShowError(exception.Message);
-        });
+        }
+        finally
+        {
+            _isRecovering = false;
+        }
     }
 
     private void DisplayLiveFrame(BgraFrame frame)
@@ -358,6 +437,7 @@ public partial class MainWindow : Window
             frame.Pixels,
             frame.Stride,
             0);
+        UpdateNavigationSelectionRing();
     }
 
     private void ShowLivePanel()
@@ -383,6 +463,84 @@ public partial class MainWindow : Window
         if (_liveSession is not null)
         {
             _liveSession.Visibility = eventArguments.NewValue;
+        }
+
+        if (_preferencesLoaded)
+        {
+            try
+            {
+                AppPreferences.SaveLiveVisibility(eventArguments.NewValue);
+            }
+            catch (Exception exception)
+            {
+                _logger.Log(
+                    $"Live visibility setting could not be saved: {exception.Message}");
+            }
+        }
+    }
+
+    private void Keyboard_NavigationSelectionChanged(
+        LowerNavigationItem? selectedItem)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            _selectedNavigationItem = selectedItem;
+            UpdateNavigationSelectionRing();
+            _standardNavigationOverlay?.SetSelection(selectedItem);
+        });
+    }
+
+    private void LiveImage_SizeChanged(
+        object sender,
+        SizeChangedEventArgs eventArguments)
+    {
+        UpdateNavigationSelectionRing();
+    }
+
+    private void UpdateNavigationSelectionRing()
+    {
+        Dispatcher.VerifyAccess();
+        if (_selectedNavigationItem is null ||
+            _liveBitmap is null ||
+            _liveScreenWidth <= 0 ||
+            _liveScreenHeight <= 0 ||
+            LiveImage.ActualWidth <= 0 ||
+            LiveImage.ActualHeight <= 0)
+        {
+            NavigationSelectionOuter.Visibility = Visibility.Collapsed;
+            NavigationSelectionRing.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var scale = Math.Min(
+            LiveImage.ActualWidth / _liveBitmap.PixelWidth,
+            LiveImage.ActualHeight / _liveBitmap.PixelHeight);
+        var displayedWidth = _liveBitmap.PixelWidth * scale;
+        var displayedHeight = _liveBitmap.PixelHeight * scale;
+        var offsetX = (LiveImage.ActualWidth - displayedWidth) / 2;
+        var offsetY = (LiveImage.ActualHeight - displayedHeight) / 2;
+        var devicePoint = _selectedNavigationItem.Value.GetDevicePoint(
+            _liveScreenWidth,
+            _liveScreenHeight);
+        var bitmapX =
+            devicePoint.X * (double)_liveBitmap.PixelWidth / _liveScreenWidth;
+        var bitmapY =
+            devicePoint.Y * (double)_liveBitmap.PixelHeight / _liveScreenHeight;
+        var diameter = Math.Clamp(56 * scale, 26, 70);
+        var left = offsetX + bitmapX * scale - diameter / 2;
+        var top = offsetY + bitmapY * scale - diameter / 2;
+
+        foreach (var ring in new[]
+                 {
+                     NavigationSelectionOuter,
+                     NavigationSelectionRing,
+                 })
+        {
+            ring.Width = diameter;
+            ring.Height = diameter;
+            Canvas.SetLeft(ring, left);
+            Canvas.SetTop(ring, top);
+            ring.Visibility = Visibility.Visible;
         }
     }
 
@@ -538,9 +696,14 @@ public partial class MainWindow : Window
         if (_keyboard is not null)
         {
             _keyboard.QuitRequested -= Keyboard_QuitRequested;
+            _keyboard.NavigationSelectionChanged -=
+                Keyboard_NavigationSelectionChanged;
             _keyboard.Dispose();
             _keyboard = null;
         }
+
+        _standardNavigationOverlay?.Dispose();
+        _standardNavigationOverlay = null;
 
         if (_scrcpy is not null)
         {
@@ -558,7 +721,12 @@ public partial class MainWindow : Window
         }
 
         _liveBitmap = null;
+        _liveScreenWidth = 0;
+        _liveScreenHeight = 0;
+        _selectedNavigationItem = null;
         LiveImage.Source = null;
+        NavigationSelectionOuter.Visibility = Visibility.Collapsed;
+        NavigationSelectionRing.Visibility = Visibility.Collapsed;
     }
 }
 

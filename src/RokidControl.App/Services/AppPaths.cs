@@ -16,4 +16,7 @@ internal static class AppPaths
 
     public static string WifiAddressFile { get; } =
         Path.Combine(DataDirectory, "wifi-address.txt");
+
+    public static string LiveVisibilityFile { get; } =
+        Path.Combine(DataDirectory, "live-visibility.txt");
 }

@@ -11,10 +11,14 @@ Rokid AI Glasses RV101の画面をWindowsへ表示し、Windowsのマウスと�
 - Windows版の正式仕様を作成済み
 - ADB接続、Rokid判定、背景なし表示の起動処理を実装済み
 - Windows専用のキーボード入力制御を実装済み
-- Windows Graphics Capture APIとHUD合成の単体技術試験に合格
-- Rokid実機を使う結合試験とライブ映像の画面取得は未実施
+- Windows Graphics Captureによるカメラ・HUD取得とライブ合成を実装済み
+- ライブ映像の自動再接続、選択リング、見やすさ設定の保存を実装済み
+- Rokid実機でUSB・Wi-Fi接続、15fpsで5分間の2画面取得、入力隔離、終了処理を確認済み
+- GitHub ReleasesのポータブルZIPへ信頼されたコード署名を行う方針
 
 詳しくは[仕様書](docs/SPECIFICATION.md)と[技術試験計画](docs/TECHNICAL-TEST-PLAN.md)を参照してください。
+
+本アプリは画面や操作内容をクラウドへ送信しません。詳細は[プライバシー方針](PRIVACY.md)を参照してください。
 
 ## 開発環境
 
@@ -44,6 +48,14 @@ OneDrive上の並列ビルドでファイル競合が起きる場合があるた
 ```
 
 出力先は`artifacts/publish/win-x64`です。
+
+バージョン付きの配布ZIPとSHA-256チェックサムは次のコマンドで作成します。
+
+```powershell
+.\tools\package.ps1 -Version 0.1.0-alpha
+```
+
+出力先は`artifacts/package`です。一般公開版はコード署名サービスの承認後、署名済みファイルから同じ形式のZIPを作成します。
 
 ## セルフテスト
 

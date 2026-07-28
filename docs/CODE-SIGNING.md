@@ -12,24 +12,30 @@ Rokid ControlをSmart App Controlが有効なWindows 11でも安全に実行で�
 
 ## 採用方針
 
-### GitHub Releasesで直接配布する場合
+GitHub Releasesから直接配布し、一般公開版は信頼されたRSAコード署名を付ける。Microsoft StoreとMSIXでの配布は対象外とする。
 
-Microsoft Artifact Signing（旧称Trusted Signing）を第一候補とする。
+日本在住の個人開発者はMicrosoft Artifact SigningのPublic Trust対象地域外であるため、初版ではオープンソースプロジェクト向けのSignPath Foundationへ申請する。採用可否はSignPath Foundationの審査による。
 
-1. Artifact Signingのアカウント、本人確認、証明書プロファイルを用意する。
-2. GitHub Actionsでは短期資格情報を使い、長期の秘密鍵ファイルをリポジトリへ保存しない。
+1. GitHub Actionsのクリーンなビルドだけを署名対象にする。
+2. 長期の秘密鍵ファイルをリポジトリや開発PCへ保存しない。
 3. 公開物に含まれる自作の`.exe`と`.dll`をRSA証明書で署名する。
 4. SHA-256のタイムスタンプを付与する。
 5. 署名後に`signtool verify /pa /all`で全対象を検証する。
-6. 署名済み成果物から配布用ZIPまたはMSIXを作成し、SHA-256を公開する。
+6. 署名済み成果物から配布用ZIPを作成し、SHA-256を公開する。
 
-### Microsoft Storeで配布する場合
+### SignPath Foundation
 
-MSIXとして提出し、Storeによる署名を利用する。Store経由のMSIXは証明書の購入と管理が不要で、利用者にSmartScreenの警告を出さない点を優先する場合に適する。
+本プロジェクトはApache License 2.0で公開し、配布物へ含めるscrcpy、ADB、FFmpeg、SDL、.NETもオープンソースまたはシステムライブラリで構成する。申請前に次を満たす。
 
-### オープンソース向け代替
+- 署名前と同じ形式の公開プレリリースを1回作成する。
+- READMEへ機能、入手方法、ライセンス、プライバシー方針を掲載する。
+- GitHub Actionsから再現可能な配布ZIPを生成する。
+- コミット権限者とリリース承認者を明示する。
+- 審査承認後、SignPathの指定する署名ワークフローを追加する。
 
-プロジェクトが条件を満たす場合はSignPath Foundationの無償署名も候補とする。申請と承認が必要なため、公開日程が決まる前に適格性を確認する。
+### Microsoft Artifact Signing
+
+2026年7月29日時点で、Public Trustは個人開発者の場合は米国・カナダ、組織の場合も米国・カナダ・EU・英国に限定される。日本在住の個人による初版では使用しない。対象地域が拡大した場合は再検討する。Private Trustは一般利用者向けの信頼を提供しないため採用しない。
 
 ## 採用しない方式
 
@@ -38,12 +44,13 @@ MSIXとして提出し、Storeによる署名を利用する。Store経由のMSI
 - 秘密鍵や証明書パスワードをリポジトリ、ログ、配布ZIPへ含める。
 - ECC証明書だけでSmart App Control対応とする。Smart App ControlはRSA署名を必要とする。
 - タイムスタンプなしで公開物へ署名する。
+- Microsoft StoreまたはMSIXを初版の配布経路にする。
 
 ## 開発中の扱い
 
 - GitHub Actionsのクリーン環境でビルドとセルフテストを継続する。
 - このPCで新しいビルドが拒否された場合は、Code Integrityログを確認し、保護設定は変更しない。
-- 実機UI試験が必要になった時点で、Artifact Signingまたは明示的に管理された開発用署名を準備する。
+- 実機UI試験が必要になった時点で、SignPath Foundationの承認済み署名または明示的に管理された開発用署名を準備する。
 - 開発用自己署名証明書をこのPCの信頼済みストアへ追加する場合は、影響を説明し、利用者の明示的な承認を得てから実施する。
 
 ## 参考資料
@@ -52,3 +59,6 @@ MSIXとして提出し、Storeによる署名を利用する。Store経由のMSI
 - [Smart App Control overview](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/overview)
 - [Sign your app for Smart App Control compliance](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/code-signing-for-smart-app-control)
 - [Set up signing integrations to use Artifact Signing](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-signing-integrations)
+- [Artifact Signing quickstart and availability](https://learn.microsoft.com/en-us/azure/artifact-signing/quickstart)
+- [SignPath Foundation](https://signpath.org/)
+- [SignPath Foundation conditions](https://signpath.org/terms.html)
