@@ -1,6 +1,7 @@
 using RokidControl.Core.Connections;
 using RokidControl.Core.Imaging;
 using RokidControl.Core.Navigation;
+using RokidControl.Core.Processes;
 
 var tests = new (string Name, Action Run)[]
 {
@@ -12,6 +13,8 @@ var tests = new (string Name, Action Run)[]
     ("Rokid機種判定", TestRokidIdentity),
     ("HUD合成", TestHudComposition),
     ("Windowsキー割り当て", TestWindowsKeyMapping),
+    ("接続済みWi-Fi ADB再利用", () =>
+        TestConnectedWifiReuseAsync().GetAwaiter().GetResult()),
 };
 
 var failures = new List<string>();
@@ -177,6 +180,38 @@ static void TestWindowsKeyMapping()
         "未割り当てキー");
 }
 
+static async Task TestConnectedWifiReuseAsync()
+{
+    var addressFile = Path.Combine(
+        Path.GetTempPath(),
+        $"rokid-wifi-self-test-{Guid.NewGuid():N}.txt");
+    try
+    {
+        var manager = new RokidConnectionManager(
+            new ConnectedWifiAdbClient(),
+            addressFile,
+            "unused-watchdog.sh");
+        await using (manager.ConfigureAwait(false))
+        {
+            var serial = await manager.ConnectForStartupAsync(
+                searchDuration: TimeSpan.FromMilliseconds(50));
+            AssertEqual(
+                "192.168.1.20:5555",
+                serial,
+                "接続済みWi-Fiシリアル");
+        }
+
+        AssertEqual(
+            "192.168.1.20:5555",
+            (await File.ReadAllTextAsync(addressFile)).Trim(),
+            "Wi-Fiアドレス保存");
+    }
+    finally
+    {
+        File.Delete(addressFile);
+    }
+}
+
 static BgraFrame SolidFrame(int width, int height, byte blue, byte green, byte red)
 {
     var pixels = new byte[width * height * 4];
@@ -205,5 +240,25 @@ static void AssertEqual<T>(T expected, T actual, string message)
     {
         throw new InvalidOperationException(
             $"{message}: expected={expected}, actual={actual}");
+    }
+}
+
+sealed class ConnectedWifiAdbClient : IAdbClient
+{
+    public Task<CommandResult> RunAsync(
+        IEnumerable<string> arguments,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default)
+    {
+        var values = arguments.ToArray();
+        var output = values switch
+        {
+            ["devices"] =>
+                "List of devices attached\n192.168.1.20:5555\tdevice\n",
+            [.., "getprop", "ro.product.model"] => "RG-glasses\n",
+            [.., "getprop", "ro.product.manufacturer"] => "Rokid\n",
+            _ => string.Empty,
+        };
+        return Task.FromResult(new CommandResult(0, output, string.Empty, false));
     }
 }

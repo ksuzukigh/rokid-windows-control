@@ -83,6 +83,15 @@ public sealed class RokidConnectionManager : IAsyncDisposable
                 cancellationToken).ConfigureAwait(false);
         }
 
+        var connectedWifi = await FindConnectedWifiRokidAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (connectedWifi is not null)
+        {
+            progress?.Report("Rokidに接続しています…");
+            return await UseSerialAsync(connectedWifi, saveAddress: true)
+                .ConfigureAwait(false);
+        }
+
         var discovered = await ConnectToDiscoveredRokidAsync(
             progress,
             cancellationToken).ConfigureAwait(false);
@@ -158,6 +167,14 @@ public sealed class RokidConnectionManager : IAsyncDisposable
                     removeSavedAddress: true,
                     cancellationToken).ConfigureAwait(false);
                 previous = string.Empty;
+            }
+
+            var connectedWifi = await FindConnectedWifiRokidAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (connectedWifi is not null)
+            {
+                return await UseSerialAsync(connectedWifi, saveAddress: true)
+                    .ConfigureAwait(false);
             }
 
             var discovered = await ConnectToDiscoveredRokidAsync(
@@ -367,6 +384,27 @@ public sealed class RokidConnectionManager : IAsyncDisposable
 
         foreach (var device in AdbParsers.ParseDevices(result.Output)
                      .Where(device => device.IsReady && device.IsUsb))
+        {
+            if (await IsRokidDeviceAsync(device.Serial, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return device.Serial;
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<string?> FindConnectedWifiRokidAsync(
+        CancellationToken cancellationToken)
+    {
+        var result = await _adb.RunAsync(
+            ["devices"],
+            TimeSpan.FromSeconds(3),
+            cancellationToken).ConfigureAwait(false);
+
+        foreach (var device in AdbParsers.ParseDevices(result.Output)
+                     .Where(device => device.IsReady && device.IsNetwork))
         {
             if (await IsRokidDeviceAsync(device.Serial, cancellationToken)
                     .ConfigureAwait(false))

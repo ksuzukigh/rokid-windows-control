@@ -22,13 +22,13 @@
 | T08 | Windows Graphics Capture API利用可否 | PASS | 不要 | 現在のPCでAPIが利用可能 |
 | T09 | scrcpy HWND取得 | BLOCKED | Rokid必要 | HUDとカメラのHWNDをPIDから取得 |
 | T10 | 画面外scrcpyの連続取得 | BLOCKED | Rokid必要 | 2入力を15fpsで5分以上取得 |
-| T11 | RV101 USB ADB認識 | BLOCKED | Rokid必要 | `adb devices`が`device`として表示 |
-| T12 | USBからWi-Fi移行 | BLOCKED | Rokid必要 | TCP 5555で再接続しRokid判定成功 |
-| T13 | 背景なし操作 | BLOCKED | Rokid必要 | マウスと全キー操作が動作 |
-| T14 | 入力の隔離 | BLOCKED | Rokid必要 | 他アプリの入力をRokidへ送らない |
+| T11 | RV101 USB ADB認識 | PASS | Rokid必要 | `adb devices`が`device`として表示 |
+| T12 | USBからWi-Fi移行 | PASS | Rokid必要 | TCP 5555で再接続しRokid判定成功 |
+| T13 | 背景なし操作 | READY | Rokid必要 | マウスと全キー操作が動作 |
+| T14 | 入力の隔離 | READY | Rokid必要 | 他アプリの入力をRokidへ送らない |
 | T15 | カメラ競合からの復帰 | BLOCKED | Rokid必要 | カメラ解放後30秒以内に復帰 |
 | T16 | Wi-Fi瞬断からの復帰 | BLOCKED | Rokid必要 | 自動再接続して表示を再開 |
-| T17 | 終了時クリーンアップ | BLOCKED | Rokid必要 | PCとRokidに動作中プロセスを残さない |
+| T17 | 終了時クリーンアップ | PASS | Rokid必要 | PCとRokidに動作中プロセスを残さない |
 
 ## 実機試験を依頼するタイミング
 
@@ -61,3 +61,14 @@ T01からT08までがPASSになり、ADBとscrcpyを含む開発用ビルドが�
 - 受信用ウインドウ: デスクトップとAlt+Tabへ表示しない
 - 合成: 黒HUDはカメラへ影響せず、緑と白のHUDが明るく加算される
 - スライダー: 0から1の変更が即時反映される
+
+## 2026-07-29 実機試験結果
+
+- USB ADB: `device`として認識し、Rokid製RG-glassesであることを確認
+- OSと画面: Android 12、480×640
+- USBからWi-Fi ADB: TCP 5555への移行と機種再確認に成功
+- 画面受信: scrcpyで10秒間の非表示録画に成功、終了コード0
+- 背景なしモード: Windowsアプリから実画面を表示
+- キー入力: `H`と左右キーがRokidへ届くことを画面とログで確認
+- 終了処理: Windowsプロセス、Rokid側PID、生存信号の残存なし
+- 実機固有のシリアル番号、IPアドレス、SSIDは記録しない
