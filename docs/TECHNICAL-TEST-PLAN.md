@@ -21,12 +21,12 @@
 | T07 | HUD合成 | PASS | 不要 | 出力サイズ、黒透過、緑HUDを検証 |
 | T08 | Windows Graphics Capture API利用可否 | PASS | 不要 | 現在のPCでAPIが利用可能 |
 | T09 | scrcpy HWND取得 | BLOCKED | Rokid必要 | HUDとカメラのHWNDをPIDから取得 |
-| T10 | 画面外scrcpyの連続取得 | BLOCKED | Rokid必要 | 2入力を15fpsで5分以上取得 |
+| T10 | 画面外scrcpyの連続取得 | PASS | Rokid必要 | 2入力を15fpsで5分以上取得 |
 | T11 | RV101 USB ADB認識 | PASS | Rokid必要 | `adb devices`が`device`として表示 |
 | T12 | USBからWi-Fi移行 | PASS | Rokid必要 | TCP 5555で再接続しRokid判定成功 |
 | T13 | 背景なし操作 | READY | Rokid必要 | マウスと全キー操作が動作 |
 | T14 | 入力の隔離 | PASS | Rokid必要 | 他アプリの入力をRokidへ送らない |
-| T15 | カメラ競合からの復帰 | BLOCKED | Rokid必要 | カメラ解放後30秒以内に復帰 |
+| T15 | カメラ競合からの復帰 | READY | Rokid必要 | カメラ解放後30秒以内に復帰 |
 | T16 | Wi-Fi瞬断からの復帰 | BLOCKED | Rokid必要 | 自動再接続して表示を再開 |
 | T17 | 終了時クリーンアップ | PASS | Rokid必要 | PCとRokidに動作中プロセスを残さない |
 
@@ -68,6 +68,9 @@ T01からT08までがPASSになり、ADBとscrcpyを含む開発用ビルドが�
 - OSと画面: Android 12、480×640
 - USBからWi-Fi ADB: TCP 5555への移行と機種再確認に成功
 - 画面受信: scrcpyで10秒間の非表示録画に成功、終了コード0
+- HUDとカメラの同時受信: 15fpsで5分間継続し、両方とも正常終了
+- Wi-Fiのみの継続確認: USBを外した後もADB接続を維持
+- カメラ再取得: 直前の受信終了直後は競合する場合があり、約5秒の待機後に再取得できることを確認
 - 背景なしモード: Windowsアプリから実画面を表示
 - キー入力: `H`と左右キーがRokidへ届くことを画面とログで確認
 - Wi-Fiのみの再起動: USBを外した状態でアプリから画面表示に成功
