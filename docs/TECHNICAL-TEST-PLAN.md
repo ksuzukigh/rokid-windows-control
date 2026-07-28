@@ -20,7 +20,7 @@
 | T06 | 画面サイズとIPv4解析 | PASS | 不要 | 標準出力の表記揺れを処理 |
 | T07 | HUD合成 | PASS | 不要 | 出力サイズ、黒透過、緑HUDを検証 |
 | T08 | Windows Graphics Capture API利用可否 | PASS | 不要 | 現在のPCでAPIが利用可能 |
-| T09 | scrcpy HWND取得 | BLOCKED | Rokid必要 | HUDとカメラのHWNDをPIDから取得 |
+| T09 | scrcpy HWND取得 | PASS | Rokid必要 | HUDとカメラのHWNDをPIDから取得 |
 | T10 | 画面外scrcpyの連続取得 | PASS | Rokid必要 | 2入力を15fpsで5分以上取得 |
 | T11 | RV101 USB ADB認識 | PASS | Rokid必要 | `adb devices`が`device`として表示 |
 | T12 | USBからWi-Fi移行 | PASS | Rokid必要 | TCP 5555で再接続しRokid判定成功 |
@@ -71,6 +71,8 @@ T01からT08までがPASSになり、ADBとscrcpyを含む開発用ビルドが�
 - HUDとカメラの同時受信: 15fpsで5分間継続し、両方とも正常終了
 - Wi-Fiのみの継続確認: USBを外した後もADB接続を維持
 - カメラ再取得: 直前の受信終了直後は競合する場合があり、約5秒の待機後に再取得できることを確認
+- scrcpy HWND取得: 起動直後のPIDから枠なしウインドウを検出
+- Windows Graphics Capture: 枠なしscrcpyから480×640の初回フレームを86msで取得
 - 背景なしモード: Windowsアプリから実画面を表示
 - キー入力: `H`と左右キーがRokidへ届くことを画面とログで確認
 - Wi-Fiのみの再起動: USBを外した状態でアプリから画面表示に成功
