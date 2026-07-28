@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+.idea/
+.vscode/
+.dotnet-cli-home/
+.nuget-packages/
+.android-home/
+.android-sdk-home/
+artifacts/
+vendor/scrcpy/
+*.user
+*.suo
+*.log
