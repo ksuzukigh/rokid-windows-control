@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private DisplayMode? _selectedMode;
     private bool _isClosing;
     private bool _shutdownCompleted;
+    private bool _isRecovering;
 
     public MainWindow()
     {
@@ -48,7 +49,11 @@ public partial class MainWindow : Window
 
     private async void RetryButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_selectedMode is not null)
+        if (_selectedMode == DisplayMode.Standard && _connection is not null)
+        {
+            await RecoverStandardSessionAsync();
+        }
+        else if (_selectedMode is not null)
         {
             await StartSelectedModeAsync();
         }
@@ -101,17 +106,11 @@ public partial class MainWindow : Window
             }
 
             ShowProgress("画面を受信しています…");
-            _scrcpy = new ScrcpyProcessManager(resources, _logger);
-            _scrcpy.Exited += Scrcpy_Exited;
-            _scrcpy.StartStandard(serial);
-            _keyboard = new WindowsKeyboardController(
-                _connection,
-                _logger,
+            StartStandardSession(
+                resources,
+                serial,
                 screenSize.Width,
                 screenSize.Height);
-            _keyboard.QuitRequested += Keyboard_QuitRequested;
-            _keyboard.Start(_scrcpy.ProcessId);
-            Hide();
         }
         catch (OperationCanceledException)
         {
@@ -124,6 +123,43 @@ public partial class MainWindow : Window
         {
             _logger.Log($"ERROR {exception}");
             ShowError(exception.Message);
+        }
+    }
+
+    private void StartStandardSession(
+        AppResources resources,
+        string serial,
+        int screenWidth,
+        int screenHeight)
+    {
+        if (_connection is null)
+        {
+            throw new InvalidOperationException("接続管理を開始できませんでした。");
+        }
+
+        var scrcpy = new ScrcpyProcessManager(resources, _logger);
+        var keyboard = new WindowsKeyboardController(
+                _connection,
+                _logger,
+                screenWidth,
+                screenHeight);
+        try
+        {
+            scrcpy.Exited += Scrcpy_Exited;
+            scrcpy.StartStandard(serial);
+            keyboard.QuitRequested += Keyboard_QuitRequested;
+            keyboard.Start(scrcpy.ProcessId);
+            _scrcpy = scrcpy;
+            _keyboard = keyboard;
+            Hide();
+        }
+        catch
+        {
+            keyboard.QuitRequested -= Keyboard_QuitRequested;
+            keyboard.Dispose();
+            scrcpy.Exited -= Scrcpy_Exited;
+            scrcpy.Dispose();
+            throw;
         }
     }
 
@@ -159,11 +195,58 @@ public partial class MainWindow : Window
     {
         Dispatcher.InvokeAsync(() =>
         {
-            if (!_isClosing)
-            {
-                Close();
-            }
+            _ = RecoverStandardSessionAsync();
         });
+    }
+
+    private async Task RecoverStandardSessionAsync()
+    {
+        if (_isClosing || _isRecovering || _connection is null)
+        {
+            return;
+        }
+
+        _isRecovering = true;
+        StopLocalSession();
+        Show();
+        ShowProgress("Rokidへの接続を復旧しています…");
+        _logger.Log("scrcpy終了後の自動再接続を開始");
+
+        try
+        {
+            var cancellationToken = _operationCancellation?.Token ??
+                CancellationToken.None;
+            var serial = await _connection.ReconnectAsync(cancellationToken);
+            if (serial is null)
+            {
+                throw new RokidConnectionException(
+                    RokidConnectionError.NoDevice);
+            }
+
+            await StartWindowsModeWithRetryAsync(cancellationToken);
+            var screenSize = await _connection.GetScreenSizeAsync(
+                cancellationToken);
+            var resources = AppResources.Locate();
+            StartStandardSession(
+                resources,
+                serial,
+                screenSize.Width,
+                screenSize.Height);
+            _logger.Log($"自動再接続成功 serial={serial}");
+        }
+        catch (OperationCanceledException) when (_isClosing)
+        {
+            // Normal shutdown.
+        }
+        catch (Exception exception)
+        {
+            _logger.Log($"自動再接続失敗 {exception}");
+            ShowError(exception.Message);
+        }
+        finally
+        {
+            _isRecovering = false;
+        }
     }
 
     private void Keyboard_QuitRequested()
@@ -205,15 +288,7 @@ public partial class MainWindow : Window
 
         _isClosing = true;
         _operationCancellation?.Cancel();
-        if (_keyboard is not null)
-        {
-            _keyboard.QuitRequested -= Keyboard_QuitRequested;
-            _keyboard.Dispose();
-            _keyboard = null;
-        }
-
-        _scrcpy?.Dispose();
-        _scrcpy = null;
+        StopLocalSession();
 
         if (_connection is not null)
         {
@@ -238,6 +313,23 @@ public partial class MainWindow : Window
         _logger.Dispose();
         _shutdownCompleted = true;
         Application.Current.Shutdown();
+    }
+
+    private void StopLocalSession()
+    {
+        if (_keyboard is not null)
+        {
+            _keyboard.QuitRequested -= Keyboard_QuitRequested;
+            _keyboard.Dispose();
+            _keyboard = null;
+        }
+
+        if (_scrcpy is not null)
+        {
+            _scrcpy.Exited -= Scrcpy_Exited;
+            _scrcpy.Dispose();
+            _scrcpy = null;
+        }
     }
 }
 
