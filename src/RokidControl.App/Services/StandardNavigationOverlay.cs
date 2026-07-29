@@ -68,17 +68,19 @@ internal sealed class StandardNavigationOverlay : IDisposable
     {
         var outer = new Ellipse
         {
-            Stroke = new SolidColorBrush(Color.FromArgb(217, 0, 0, 0)),
+            Stroke = new SolidColorBrush(Color.FromArgb(166, 0, 0, 0)),
             StrokeThickness = 7,
-            Width = RingSize,
-            Height = RingSize,
+            Width = RingSize - 6,
+            Height = RingSize - 6,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
         };
         var inner = new Ellipse
         {
-            Stroke = new SolidColorBrush(Color.FromRgb(115, 244, 199)),
+            Stroke = new SolidColorBrush(Color.FromRgb(100, 210, 255)),
             StrokeThickness = 3,
-            Width = RingSize - 4,
-            Height = RingSize - 4,
+            Width = RingSize - 10,
+            Height = RingSize - 10,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };

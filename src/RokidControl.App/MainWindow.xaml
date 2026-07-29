@@ -129,12 +129,12 @@
                         IsHitTestVisible="False">
                     <Ellipse x:Name="NavigationSelectionOuter"
                              Visibility="Collapsed"
-                             Stroke="#D9000000"
-                             StrokeThickness="9" />
+                             Stroke="#A6000000"
+                             StrokeThickness="7" />
                     <Ellipse x:Name="NavigationSelectionRing"
                              Visibility="Collapsed"
-                             Stroke="#FF73F4C7"
-                             StrokeThickness="4" />
+                             Stroke="#FF64D2FF"
+                             StrokeThickness="3" />
                 </Canvas>
             </Grid>
             <Border Grid.Row="1"

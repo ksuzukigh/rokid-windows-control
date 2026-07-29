@@ -570,22 +570,23 @@ public partial class MainWindow : Window
             devicePoint.X * (double)_liveBitmap.PixelWidth / _liveScreenWidth;
         var bitmapY =
             devicePoint.Y * (double)_liveBitmap.PixelHeight / _liveScreenHeight;
-        var diameter = Math.Clamp(56 * scale, 26, 70);
+        var diameter = Math.Max(44 * scale, 30);
         var left = offsetX + bitmapX * scale - diameter / 2;
         var top = offsetY + bitmapY * scale - diameter / 2;
 
-        foreach (var ring in new[]
-                 {
-                     NavigationSelectionOuter,
-                     NavigationSelectionRing,
-                 })
-        {
-            ring.Width = diameter;
-            ring.Height = diameter;
-            Canvas.SetLeft(ring, left);
-            Canvas.SetTop(ring, top);
-            ring.Visibility = Visibility.Visible;
-        }
+        NavigationSelectionOuter.Width = diameter - 6;
+        NavigationSelectionOuter.Height = diameter - 6;
+        NavigationSelectionOuter.StrokeThickness = 7;
+        Canvas.SetLeft(NavigationSelectionOuter, left + 3);
+        Canvas.SetTop(NavigationSelectionOuter, top + 3);
+        NavigationSelectionOuter.Visibility = Visibility.Visible;
+
+        NavigationSelectionRing.Width = diameter - 10;
+        NavigationSelectionRing.Height = diameter - 10;
+        NavigationSelectionRing.StrokeThickness = 3;
+        Canvas.SetLeft(NavigationSelectionRing, left + 5);
+        Canvas.SetTop(NavigationSelectionRing, top + 5);
+        NavigationSelectionRing.Visibility = Visibility.Visible;
     }
 
     private async void LiveImage_MouseLeftButtonDown(
