@@ -12,11 +12,17 @@ namespace RokidControl.App.Services;
 
 internal sealed class StandardNavigationOverlay : IDisposable
 {
-    private const int RingSize = 44;
+    private const double DeviceRingSize = 44;
+    private const double DeviceOuterInset = 3;
+    private const double DeviceOuterStroke = 7;
+    private const double DeviceInnerInset = 5;
+    private const double DeviceInnerStroke = 3;
     private readonly int _processId;
     private readonly int _screenWidth;
     private readonly int _screenHeight;
     private readonly Window _window;
+    private readonly Ellipse _outer;
+    private readonly Ellipse _inner;
     private readonly DispatcherTimer _trackingTimer;
     private LowerNavigationItem? _selectedItem;
     private bool _disposed;
@@ -33,7 +39,7 @@ internal sealed class StandardNavigationOverlay : IDisposable
         _processId = processId;
         _screenWidth = screenWidth;
         _screenHeight = screenHeight;
-        _window = CreateWindow();
+        _window = CreateWindow(out _outer, out _inner);
         _window.SourceInitialized += Window_SourceInitialized;
 
         _trackingTimer = new DispatcherTimer(
@@ -64,23 +70,19 @@ internal sealed class StandardNavigationOverlay : IDisposable
         _window.Close();
     }
 
-    private static Window CreateWindow()
+    private static Window CreateWindow(
+        out Ellipse outer,
+        out Ellipse inner)
     {
-        var outer = new Ellipse
+        outer = new Ellipse
         {
             Stroke = new SolidColorBrush(Color.FromArgb(166, 0, 0, 0)),
-            StrokeThickness = 7,
-            Width = RingSize - 6,
-            Height = RingSize - 6,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var inner = new Ellipse
+        inner = new Ellipse
         {
             Stroke = new SolidColorBrush(Color.FromRgb(100, 210, 255)),
-            StrokeThickness = 3,
-            Width = RingSize - 10,
-            Height = RingSize - 10,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -93,8 +95,8 @@ internal sealed class StandardNavigationOverlay : IDisposable
 
         return new Window
         {
-            Width = RingSize,
-            Height = RingSize,
+            Width = DeviceRingSize,
+            Height = DeviceRingSize,
             WindowStyle = WindowStyle.None,
             ResizeMode = ResizeMode.NoResize,
             AllowsTransparency = true,
@@ -176,16 +178,29 @@ internal sealed class StandardNavigationOverlay : IDisposable
                 clientOrigin.X + (clientWidth - displayedWidth) / 2;
             var contentTop =
                 clientOrigin.Y + (clientHeight - displayedHeight) / 2;
-            var devicePoint = _selectedItem.Value.GetDevicePoint(
+            var devicePoint = _selectedItem.Value.GetHighlightPoint(
                 _screenWidth,
                 _screenHeight);
             var centerX = contentLeft + devicePoint.X * scale;
             var centerY = contentTop + devicePoint.Y * scale;
             var dpi = Math.Max(NativeMethods.GetDpiForWindow(targetWindow), 96);
             var pixelsPerDip = dpi / 96d;
+            var ringSize = DeviceRingSize * scale / pixelsPerDip;
+            var outerInset = DeviceOuterInset * scale / pixelsPerDip;
+            var innerInset = DeviceInnerInset * scale / pixelsPerDip;
 
-            _window.Left = centerX / pixelsPerDip - RingSize / 2d;
-            _window.Top = centerY / pixelsPerDip - RingSize / 2d;
+            _window.Width = ringSize;
+            _window.Height = ringSize;
+            _outer.Width = ringSize - 2 * outerInset;
+            _outer.Height = ringSize - 2 * outerInset;
+            _outer.StrokeThickness =
+                DeviceOuterStroke * scale / pixelsPerDip;
+            _inner.Width = ringSize - 2 * innerInset;
+            _inner.Height = ringSize - 2 * innerInset;
+            _inner.StrokeThickness =
+                DeviceInnerStroke * scale / pixelsPerDip;
+            _window.Left = centerX / pixelsPerDip - ringSize / 2d;
+            _window.Top = centerY / pixelsPerDip - ringSize / 2d;
             if (!_window.IsVisible)
             {
                 _window.Show();

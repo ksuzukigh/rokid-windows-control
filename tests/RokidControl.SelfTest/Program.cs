@@ -76,6 +76,10 @@ static void TestKeyboardNavigation()
         new DevicePoint(240, 320),
         LowerNavigationItem.Home.GetDevicePoint(480, 640),
         "Homeの座標");
+    AssertEqual(
+        new DevicePoint(240, 330),
+        LowerNavigationItem.Home.GetHighlightPoint(480, 640),
+        "Home選択表示の中心");
 }
 
 static void TestAdbDevices()

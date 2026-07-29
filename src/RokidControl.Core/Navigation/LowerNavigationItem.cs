@@ -38,7 +38,18 @@ public static class LowerNavigationItemExtensions
             screenWidth / 2 + item.GetHorizontalOffset(screenWidth),
             screenHeight / 2);
     }
+
+    public static DevicePoint GetHighlightPoint(
+        this LowerNavigationItem item,
+        int screenWidth,
+        int screenHeight)
+    {
+        var tapPoint = item.GetDevicePoint(screenWidth, screenHeight);
+
+        // The visible lower-row icons on the 480x640 Rokid display are
+        // centered at y=330, while their input target remains at y=320.
+        return tapPoint with { Y = tapPoint.Y + screenHeight / 64 };
+    }
 }
 
 public readonly record struct DevicePoint(int X, int Y);
-

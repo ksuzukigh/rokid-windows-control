@@ -563,7 +563,7 @@ public partial class MainWindow : Window
         var displayedHeight = _liveBitmap.PixelHeight * scale;
         var offsetX = (LiveImage.ActualWidth - displayedWidth) / 2;
         var offsetY = (LiveImage.ActualHeight - displayedHeight) / 2;
-        var devicePoint = _selectedNavigationItem.Value.GetDevicePoint(
+        var devicePoint = _selectedNavigationItem.Value.GetHighlightPoint(
             _liveScreenWidth,
             _liveScreenHeight);
         var bitmapX =
