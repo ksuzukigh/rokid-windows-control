@@ -344,6 +344,12 @@ internal sealed class WindowsKeyboardController : IDisposable
                 else if (await _connection.IsLauncherActiveAsync(cancellationToken)
                              .ConfigureAwait(false))
                 {
+                    // Rokid hides the launcher contents after an idle period.
+                    // Forward the first Down press so the device reveals the
+                    // launcher row before showing our local selection ring.
+                    await SendKeyAsync(
+                        "KEYCODE_DPAD_DOWN",
+                        cancellationToken).ConfigureAwait(false);
                     _navigation.EnterLowerRow();
                     PublishSelection();
                 }

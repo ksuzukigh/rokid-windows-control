@@ -43,6 +43,16 @@ if (Test-Path -LiteralPath $adbPath) {
     }
 
     if ($null -eq $wifiAddress) {
+        $connectedWifiSerial = $devicesOutput |
+            Select-String -Pattern '^((?:\d{1,3}\.){3}\d{1,3}:5555)\s+device$' |
+            ForEach-Object { $_.Matches[0].Groups[1].Value } |
+            Select-Object -First 1
+        if ($null -ne $connectedWifiSerial) {
+            $wifiAddress = $connectedWifiSerial
+        }
+    }
+
+    if ($null -eq $wifiAddress) {
         $mdnsOutput = & $adbPath mdns services 2>$null
         $mdnsMatch = [regex]::Match(
             ($mdnsOutput -join [Environment]::NewLine),
