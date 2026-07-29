@@ -173,9 +173,9 @@ static void TestWindowsKeyMapping()
         WindowsKeyCommandMapper.Map('Q', true, false),
         "Ctrl+Q");
     AssertEqual<KeyboardCommand?>(
-        null,
+        KeyboardCommand.Quit,
         WindowsKeyCommandMapper.Map(0x73, false, true),
-        "Alt+F4はWindowsへ渡す");
+        "Alt+F4で終了");
     AssertEqual<KeyboardCommand?>(
         null,
         WindowsKeyCommandMapper.Map('A', false, false),

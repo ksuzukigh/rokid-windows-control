@@ -14,7 +14,7 @@ public static class WindowsKeyCommandMapper
 
         if (altPressed && virtualKey == 0x73)
         {
-            return null;
+            return KeyboardCommand.Quit;
         }
 
         return virtualKey switch
