@@ -183,7 +183,14 @@ internal sealed class StandardNavigationOverlay : IDisposable
                 _screenHeight);
             var centerX = contentLeft + devicePoint.X * scale;
             var centerY = contentTop + devicePoint.Y * scale;
-            var dpi = Math.Max(NativeMethods.GetDpiForWindow(targetWindow), 96);
+            // WPF positions this overlay in device-independent pixels. Use the
+            // overlay HWND's DPI for that conversion; scrcpy can report a
+            // different DPI-awareness context from the WPF process.
+            var overlayHandle =
+                new WindowInteropHelper(_window).EnsureHandle();
+            var dpi = Math.Max(
+                NativeMethods.GetDpiForWindow(overlayHandle),
+                96);
             var pixelsPerDip = dpi / 96d;
             var ringSize = DeviceRingSize * scale / pixelsPerDip;
             var outerInset = DeviceOuterInset * scale / pixelsPerDip;
