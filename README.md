@@ -15,8 +15,9 @@ Rokid AI Glasses RV101の画面をWindowsへ表示し、Windowsのマウスと�
 - ライブ映像の自動再接続、選択リング、見やすさ設定の保存を実装済み
 - Rokid実機でUSB・Wi-Fi接続、15fpsで5分間の2画面取得、入力隔離、終了処理を確認済み
 - GitHub ReleasesのポータブルZIPへ信頼されたコード署名を行う方針
+- 一般公開前にUI調整、実機での最終確認、利用者による公開承認を行う方針
 
-詳しくは[仕様書](docs/SPECIFICATION.md)と[技術試験計画](docs/TECHNICAL-TEST-PLAN.md)を参照してください。
+詳しくは[仕様書](docs/SPECIFICATION.md)、[技術試験計画](docs/TECHNICAL-TEST-PLAN.md)、[リリースチェックリスト](docs/RELEASE-CHECKLIST.md)を参照してください。
 
 本アプリは画面や操作内容をクラウドへ送信しません。詳細は[プライバシー方針](PRIVACY.md)を参照してください。
 
@@ -55,7 +56,7 @@ OneDrive上の並列ビルドでファイル競合が起きる場合があるた
 .\tools\package.ps1 -Version 0.1.0-alpha
 ```
 
-出力先は`artifacts/package`です。一般公開版はコード署名サービスの承認後、署名済みファイルから同じ形式のZIPを作成します。
+出力先は`artifacts/package`です。このコマンドで作る成果物はローカル確認用であり、自動的には公開されません。一般公開版はUI調整と最終確認を終え、コード署名サービスの承認後、署名済みファイルから同じ形式のZIPを作成します。
 
 ## セルフテスト
 
