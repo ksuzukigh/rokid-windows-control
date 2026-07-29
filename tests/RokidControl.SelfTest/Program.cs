@@ -15,6 +15,8 @@ var tests = new (string Name, Action Run)[]
     ("Windowsキー割り当て", TestWindowsKeyMapping),
     ("接続済みWi-Fi ADB再利用", () =>
         TestConnectedWifiReuseAsync().GetAwaiter().GetResult()),
+    ("USB切断後の保存済みWi-Fi再利用", () =>
+        TestSavedWifiAfterUsbDisconnectAsync().GetAwaiter().GetResult()),
 };
 
 var failures = new List<string>();
@@ -212,6 +214,41 @@ static async Task TestConnectedWifiReuseAsync()
     }
 }
 
+static async Task TestSavedWifiAfterUsbDisconnectAsync()
+{
+    var addressFile = Path.Combine(
+        Path.GetTempPath(),
+        $"rokid-wifi-reconnect-self-test-{Guid.NewGuid():N}.txt");
+    try
+    {
+        const string savedAddress = "192.168.1.20:5555";
+        await File.WriteAllTextAsync(addressFile, savedAddress);
+        var adb = new UsbThenSavedWifiAdbClient();
+        var manager = new RokidConnectionManager(
+            adb,
+            addressFile,
+            "unused-watchdog.sh");
+        await using (manager.ConfigureAwait(false))
+        {
+            var usbSerial = await manager.ConnectForStartupAsync(
+                searchDuration: TimeSpan.FromMilliseconds(50));
+            AssertEqual("USB123", usbSerial, "初期USBシリアル");
+
+            adb.UsbConnected = false;
+            var reconnected = await manager.ReconnectAsync();
+            AssertEqual(
+                savedAddress,
+                reconnected,
+                "USB切断後の保存済みWi-Fiシリアル");
+            Assert(adb.SavedAddressConnectAttempted, "保存済みアドレスへ接続");
+        }
+    }
+    finally
+    {
+        File.Delete(addressFile);
+    }
+}
+
 static BgraFrame SolidFrame(int width, int height, byte blue, byte green, byte red)
 {
     var pixels = new byte[width * height * 4];
@@ -260,5 +297,46 @@ sealed class ConnectedWifiAdbClient : IAdbClient
             _ => string.Empty,
         };
         return Task.FromResult(new CommandResult(0, output, string.Empty, false));
+    }
+}
+
+sealed class UsbThenSavedWifiAdbClient : IAdbClient
+{
+    public bool UsbConnected { get; set; } = true;
+
+    public bool SavedAddressConnectAttempted { get; private set; }
+
+    private bool WifiConnected { get; set; }
+
+    public Task<CommandResult> RunAsync(
+        IEnumerable<string> arguments,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default)
+    {
+        var values = arguments.ToArray();
+        var output = values switch
+        {
+            ["devices"] when UsbConnected =>
+                "List of devices attached\nUSB123\tdevice\n",
+            ["devices"] when WifiConnected =>
+                "List of devices attached\n192.168.1.20:5555\tdevice\n",
+            ["devices"] =>
+                "List of devices attached\n",
+            ["connect", "192.168.1.20:5555"] =>
+                ConnectSavedAddress(),
+            ["-s", "192.168.1.20:5555", "get-state"] when WifiConnected =>
+                "device\n",
+            [.., "getprop", "ro.product.model"] => "RG-glasses\n",
+            [.., "getprop", "ro.product.manufacturer"] => "Rokid\n",
+            _ => string.Empty,
+        };
+        return Task.FromResult(new CommandResult(0, output, string.Empty, false));
+    }
+
+    private string ConnectSavedAddress()
+    {
+        SavedAddressConnectAttempted = true;
+        WifiConnected = true;
+        return "connected to 192.168.1.20:5555\n";
     }
 }

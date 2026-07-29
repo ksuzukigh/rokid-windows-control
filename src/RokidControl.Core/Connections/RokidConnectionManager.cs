@@ -135,6 +135,8 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         var previous = await GetCurrentSerialAsync().ConfigureAwait(false);
+        var saved = await ReadSavedAddressAsync(cancellationToken)
+            .ConfigureAwait(false);
         if (previous.Contains(':', StringComparison.Ordinal))
         {
             _ = await _adb.RunAsync(
@@ -153,20 +155,51 @@ public sealed class RokidConnectionManager : IAsyncDisposable
                 return await UseSerialAsync(usb, saveAddress: false).ConfigureAwait(false);
             }
 
-            if (previous.Contains(':', StringComparison.Ordinal) &&
-                await ConnectAsync(previous, cancellationToken).ConfigureAwait(false))
-            {
-                if (await IsRokidDeviceAsync(previous, cancellationToken).ConfigureAwait(false))
+            var wifiCandidates = new[]
                 {
-                    return await UseSerialAsync(previous, saveAddress: true)
+                    previous.Contains(':', StringComparison.Ordinal)
+                        ? previous
+                        : null,
+                    saved,
+                }
+                .Where(candidate => !string.IsNullOrWhiteSpace(candidate))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Cast<string>();
+            foreach (var candidate in wifiCandidates)
+            {
+                if (!await ConnectAsync(candidate, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                if (await IsRokidDeviceAsync(candidate, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    return await UseSerialAsync(candidate, saveAddress: true)
                         .ConfigureAwait(false);
                 }
 
+                var isSavedAddress = string.Equals(
+                    candidate,
+                    saved,
+                    StringComparison.OrdinalIgnoreCase);
                 await RejectWifiDeviceAsync(
-                    previous,
-                    removeSavedAddress: true,
+                    candidate,
+                    removeSavedAddress: isSavedAddress,
                     cancellationToken).ConfigureAwait(false);
-                previous = string.Empty;
+                if (string.Equals(
+                        candidate,
+                        previous,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    previous = string.Empty;
+                }
+
+                if (isSavedAddress)
+                {
+                    saved = null;
+                }
             }
 
             var connectedWifi = await FindConnectedWifiRokidAsync(cancellationToken)
