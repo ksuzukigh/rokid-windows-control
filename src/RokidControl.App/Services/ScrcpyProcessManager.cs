@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
+using RokidControl.WindowsCapture;
 
 namespace RokidControl.App.Services;
 
@@ -15,7 +17,7 @@ internal sealed class ScrcpyProcessManager : IDisposable
         _logger = logger;
     }
 
-    public event EventHandler? Exited;
+    public event EventHandler<ScrcpyExitedEventArgs>? Exited;
 
     public int ProcessId =>
         _process?.Id ??
@@ -71,6 +73,20 @@ internal sealed class ScrcpyProcessManager : IDisposable
                 "--window-y=-30000",
                 "--window-title=Rokid-Vision-Camera-Source",
             ]);
+    }
+
+    public async Task<bool> ActivateWindowAsync(
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var process = _process ??
+            throw new InvalidOperationException("scrcpyは起動していません。");
+        var windowHandle = await WindowHandleFinder.WaitForMainWindowAsync(
+            process,
+            TimeSpan.FromSeconds(8),
+            cancellationToken);
+        _ = NativeMethods.ShowWindow(windowHandle, 5);
+        return NativeMethods.SetForegroundWindow(windowHandle);
     }
 
     private void Start(
@@ -150,7 +166,28 @@ internal sealed class ScrcpyProcessManager : IDisposable
 
     private void Process_Exited(object? sender, EventArgs e)
     {
-        _logger.Log("scrcpy終了");
-        Exited?.Invoke(this, EventArgs.Empty);
+        var exitCode = sender is Process process
+            ? process.ExitCode
+            : -1;
+        _logger.Log($"scrcpy終了 exitCode={exitCode}");
+        Exited?.Invoke(this, new ScrcpyExitedEventArgs(exitCode));
     }
+
+    private static class NativeMethods
+    {
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool SetForegroundWindow(nint windowHandle);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool ShowWindow(
+            nint windowHandle,
+            int command);
+    }
+}
+
+internal sealed class ScrcpyExitedEventArgs(int exitCode) : EventArgs
+{
+    public int ExitCode { get; } = exitCode;
 }

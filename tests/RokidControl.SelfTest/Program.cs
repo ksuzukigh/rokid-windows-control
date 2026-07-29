@@ -13,6 +13,7 @@ var tests = new (string Name, Action Run)[]
     ("Rokid機種判定", TestRokidIdentity),
     ("HUD合成", TestHudComposition),
     ("Windowsキー割り当て", TestWindowsKeyMapping),
+    ("背景なし画面終了判定", TestStandardSessionExitPolicy),
     ("接続済みWi-Fi ADB再利用", () =>
         TestConnectedWifiReuseAsync().GetAwaiter().GetResult()),
     ("USB切断後の保存済みWi-Fi再利用", () =>
@@ -180,6 +181,22 @@ static void TestWindowsKeyMapping()
         null,
         WindowsKeyCommandMapper.Map('A', false, false),
         "未割り当てキー");
+}
+
+static void TestStandardSessionExitPolicy()
+{
+    AssertEqual(
+        StandardSessionExitAction.Quit,
+        StandardSessionExitPolicy.Decide(0, connectionAlive: true),
+        "利用者が画面を閉じた場合は終了");
+    AssertEqual(
+        StandardSessionExitAction.Reconnect,
+        StandardSessionExitPolicy.Decide(1, connectionAlive: true),
+        "異常終了は再接続");
+    AssertEqual(
+        StandardSessionExitAction.Reconnect,
+        StandardSessionExitPolicy.Decide(0, connectionAlive: false),
+        "通信切断時は再接続");
 }
 
 static async Task TestConnectedWifiReuseAsync()

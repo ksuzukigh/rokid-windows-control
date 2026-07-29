@@ -131,11 +131,12 @@ public partial class MainWindow : Window
             }
 
             ShowProgress("画面を受信しています…");
-            StartStandardSession(
+            await StartStandardSessionAsync(
                 resources,
                 serial,
                 screenSize.Width,
-                screenSize.Height);
+                screenSize.Height,
+                cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -151,11 +152,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private void StartStandardSession(
+    private async Task StartStandardSessionAsync(
         AppResources resources,
         string serial,
         int screenWidth,
-        int screenHeight)
+        int screenHeight,
+        CancellationToken cancellationToken)
     {
         if (_connection is null)
         {
@@ -181,6 +183,14 @@ public partial class MainWindow : Window
                 screenWidth,
                 screenHeight);
             keyboard.Start(scrcpy.ProcessId);
+            var activated = await scrcpy.ActivateWindowAsync(
+                cancellationToken);
+            if (!activated)
+            {
+                _logger.Log(
+                    "scrcpyを自動で入力先にできませんでした。画面をクリックしてください。");
+            }
+
             _scrcpy = scrcpy;
             _keyboard = keyboard;
             _standardNavigationOverlay = navigationOverlay;
@@ -282,12 +292,45 @@ public partial class MainWindow : Window
             new RokidConnectionException(RokidConnectionError.WatchdogFailed);
     }
 
-    private void Scrcpy_Exited(object? sender, EventArgs e)
+    private void Scrcpy_Exited(
+        object? sender,
+        ScrcpyExitedEventArgs eventArguments)
     {
         Dispatcher.InvokeAsync(() =>
         {
-            _ = RecoverStandardSessionAsync();
+            _ = HandleStandardSessionExitedAsync(eventArguments.ExitCode);
         });
+    }
+
+    private async Task HandleStandardSessionExitedAsync(int exitCode)
+    {
+        if (_isClosing || _connection is null)
+        {
+            return;
+        }
+
+        var connectionAlive = false;
+        try
+        {
+            connectionAlive = await _connection.IsCurrentConnectionAliveAsync();
+        }
+        catch (Exception exception)
+        {
+            _logger.Log(
+                $"scrcpy終了時の接続確認失敗 {exception.Message}");
+        }
+
+        var action = StandardSessionExitPolicy.Decide(
+            exitCode,
+            connectionAlive);
+        if (action == StandardSessionExitAction.Quit)
+        {
+            _logger.Log("背景なし画面が閉じられたためアプリを終了");
+            Close();
+            return;
+        }
+
+        await RecoverStandardSessionAsync();
     }
 
     private async Task RecoverStandardSessionAsync()
@@ -318,11 +361,12 @@ public partial class MainWindow : Window
             var screenSize = await _connection.GetScreenSizeAsync(
                 cancellationToken);
             var resources = AppResources.Locate();
-            StartStandardSession(
+            await StartStandardSessionAsync(
                 resources,
                 serial,
                 screenSize.Width,
-                screenSize.Height);
+                screenSize.Height,
+                cancellationToken);
             _logger.Log("自動再接続成功");
         }
         catch (OperationCanceledException) when (_isClosing)
