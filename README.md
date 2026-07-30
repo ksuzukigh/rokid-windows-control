@@ -22,6 +22,19 @@ Windows版の実装、実機確認、仕様の見直しは完了しています�
 
 一般利用者向けの配布ZIPには、Smart App Controlが有効なWindows 11でも信頼されるコード署名を付ける予定です。署名済み配布版の準備が完了するまでは、Windowsの保護機能を無効にして未署名版を実行するよう案内しません。
 
+SignPath Foundationへの申請では、完成版と同じ配布形式を示すため、[GitHub Releases](https://github.com/ksuzukigh/rokid-windows-control/releases)に未署名プレリリースを掲載します。これは署名審査用であり、一般利用者向けの配布版ではありません。
+
+## Code signing policy
+
+一般公開版は、GitHub Actionsで`main`の公開ソースから生成した自作の実行ファイルとDLLだけを署名対象にします。署名要求はリリースごとに手動承認し、秘密鍵はリポジトリや開発PCへ保存しません。
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- Committers and reviewers: [ksuzukigh](https://github.com/ksuzukigh)
+- Approvers: [ksuzukigh](https://github.com/ksuzukigh)
+- Privacy policy: [PRIVACY.md](PRIVACY.md)
+- Detailed policy: [Code signing and distribution](docs/CODE-SIGNING.md)
+
 ## 対応環境
 
 - Rokid AI Glasses RV101
@@ -113,7 +126,7 @@ Rokid以外のAndroid端末がUSB接続されている場合は、誤操作を�
 ### 自己完結型Windows x64フォルダーの作成
 
 ```powershell
-.\tools\publish.ps1
+.\tools\publish.ps1 -Version 0.1.0-alpha.1
 ```
 
 出力先は`artifacts/publish/win-x64`です。
@@ -121,7 +134,7 @@ Rokid以外のAndroid端末がUSB接続されている場合は、誤操作を�
 ### ZIPとSHA-256の作成
 
 ```powershell
-.\tools\package.ps1 -Version 0.1.0-alpha
+.\tools\package.ps1 -Version 0.1.0-alpha.1
 ```
 
 出力先は`artifacts/package`です。このコマンドはローカルの未署名候補を作成し、自動公開は行いません。

@@ -1,7 +1,15 @@
 [CmdletBinding()]
-param()
+param(
+    [ValidatePattern('^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$')]
+    [string]$Version = '0.1.0-alpha.1'
+)
 
 $ErrorActionPreference = 'Stop'
+$numericVersionMatch = [regex]::Match($Version, '^(\d+)\.(\d+)\.(\d+)')
+$numericVersion = '{0}.{1}.{2}.0' -f `
+    $numericVersionMatch.Groups[1].Value, `
+    $numericVersionMatch.Groups[2].Value, `
+    $numericVersionMatch.Groups[3].Value
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $dotnetCommand = Get-Command dotnet -ErrorAction SilentlyContinue
 $dotnet = if ($null -ne $dotnetCommand) {
@@ -32,7 +40,11 @@ try {
         --runtime win-x64 `
         --self-contained true `
         --output $output `
-        --configfile 'NuGet.Config'
+        --configfile 'NuGet.Config' `
+        "-p:Version=$Version" `
+        "-p:AssemblyVersion=$numericVersion" `
+        "-p:FileVersion=$numericVersion" `
+        "-p:InformationalVersion=$Version"
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet publish failed with exit code $LASTEXITCODE."
     }

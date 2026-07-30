@@ -1,8 +1,17 @@
-# コード署名と配布
+# Code signing policy（コード署名方針と配布）
 
 ## 目的
 
 Rokid ControlをSmart App Controlが有効なWindows 11でも安全に実行できる形で配布する。開発や試験のためにSmart App Control、Microsoft Defender、実行ポリシーを無効化しない。
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+## 担当者
+
+- Committers and reviewers: [ksuzukigh](https://github.com/ksuzukigh)
+- Approvers: [ksuzukigh](https://github.com/ksuzukigh)
+
+署名要求はリリースごとにApproverが手動承認する。担当者が増えた場合は、役割と氏名をこの方針へ追記する。
 
 ## 確認済みの事象
 
@@ -35,7 +44,7 @@ GitHub Releasesから直接配布し、一般公開版は信頼されたRSAコ�
 
 ### Microsoft Artifact Signing
 
-2026年7月29日時点で、Public Trustは個人開発者の場合は米国・カナダ、組織の場合も米国・カナダ・EU・英国に限定される。日本在住の個人による初版では使用しない。対象地域が拡大した場合は再検討する。Private Trustは一般利用者向けの信頼を提供しないため採用しない。
+2026年7月30日時点で、Public Trustは日本の組織にも提供されているが、個人開発者は米国・カナダ在住者に限定される。日本在住の個人による初版では使用しない。個人向けの対象地域が拡大した場合は再検討する。Private Trustは一般利用者向けの信頼を提供しないため採用しない。
 
 ## 採用しない方式
 
@@ -49,7 +58,7 @@ GitHub Releasesから直接配布し、一般公開版は信頼されたRSAコ�
 ## 開発中の扱い
 
 - GitHub Actionsのクリーン環境でビルドとセルフテストを継続する。
-- UI調整と利用者による最終確認が完了するまでは、公開プレリリースを作成しない。署名申請用の候補はローカルまたはGitHub Actionsの非公開成果物として準備する。
+- SignPath Foundationへの申請用に限り、一般利用を推奨しないことを明記した未署名プレリリースをGitHub Actionsから作成する。
 - このPCで新しいビルドが拒否された場合は、Code Integrityログを確認し、保護設定は変更しない。
 - 実機UI試験が必要になった時点で、SignPath Foundationの承認済み署名または明示的に管理された開発用署名を準備する。
 - 開発用自己署名証明書をこのPCの信頼済みストアへ追加する場合は、影響を説明し、利用者の明示的な承認を得てから実施する。
