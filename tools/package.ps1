@@ -22,7 +22,7 @@ if (-not $packageFullPath.StartsWith(
     throw 'Package output resolved outside the repository.'
 }
 
-& $publishScript
+& $publishScript -Version $Version
 
 if (Test-Path -LiteralPath $packageFullPath) {
     Remove-Item -LiteralPath $packageFullPath -Recurse -Force

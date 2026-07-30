@@ -1,0 +1,141 @@
+name: Unsigned prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Prerelease version without the v prefix
+        required: true
+        default: 0.1.0-alpha.1
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate version
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
+            throw 'Version must be a valid prerelease version without a v prefix.'
+          }
+          if ($env:RELEASE_VERSION -notmatch '-') {
+            throw 'This workflow only publishes prerelease versions.'
+          }
+
+      - name: Restore
+        run: dotnet restore RokidControl.Windows.sln --configfile NuGet.Config
+
+      - name: Build
+        run: dotnet build RokidControl.Windows.sln --configuration Release --no-restore -m:1
+
+      - name: Self-test
+        run: dotnet run --project tests/RokidControl.SelfTest/RokidControl.SelfTest.csproj --configuration Release --no-restore
+
+      - name: Windows Graphics Capture probe
+        run: dotnet run --project tools/RokidControl.CaptureProbe/RokidControl.CaptureProbe.csproj --configuration Release --no-restore
+
+      - name: Build unsigned package
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: ./tools/package.ps1 -Version $env:RELEASE_VERSION
+
+      - name: Verify package and application metadata
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:RELEASE_VERSION
+          $archiveName = "Rokid-Control-Windows-x64-$version.zip"
+          $archive = Get-Item "artifacts/package/$archiveName"
+          $checksumPath = "$($archive.FullName).sha256"
+          $checksum = Get-Content -LiteralPath $checksumPath
+          if ($archive.Length -le 0) {
+            throw 'Prerelease ZIP is empty.'
+          }
+          if ($checksum -notmatch "^[0-9a-f]{64}  $([regex]::Escape($archiveName))$") {
+            throw 'Prerelease checksum is invalid.'
+          }
+
+          $expectedProduct = 'Rokid Control for Windows'
+          $expectedFileVersion = ($version -replace '^(\d+\.\d+\.\d+).*$', '$1.0')
+          $ownBinaries = @(
+            'artifacts/publish/win-x64/Rokid Control.exe',
+            'artifacts/publish/win-x64/Rokid Control.dll',
+            'artifacts/publish/win-x64/RokidControl.Core.dll',
+            'artifacts/publish/win-x64/RokidControl.WindowsCapture.dll'
+          )
+          $productVersion = $null
+          foreach ($binary in $ownBinaries) {
+            $metadata = (Get-Item -LiteralPath $binary).VersionInfo
+            if ($metadata.ProductName -ne $expectedProduct) {
+              throw "$binary has an unexpected product name: $($metadata.ProductName)"
+            }
+            if ($metadata.FileVersion -ne $expectedFileVersion) {
+              throw "$binary has an unexpected file version: $($metadata.FileVersion)"
+            }
+            if (-not $metadata.ProductVersion.StartsWith(
+                $version,
+                [StringComparison]::Ordinal)) {
+              throw "$binary has an unexpected product version: $($metadata.ProductVersion)"
+            }
+            if ($null -eq $productVersion) {
+              $productVersion = $metadata.ProductVersion
+            }
+            elseif ($metadata.ProductVersion -ne $productVersion) {
+              throw "$binary does not share the same product version: $($metadata.ProductVersion)"
+            }
+          }
+
+      - name: Publish unsigned GitHub prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:RELEASE_VERSION
+          $tag = "v$version"
+          $archive = "artifacts/package/Rokid-Control-Windows-x64-$version.zip"
+          $checksum = "$archive.sha256"
+          $notes = @"
+          ## Unsigned SignPath application candidate
+
+          This prerelease is unsigned and exists to demonstrate the final distribution format for the SignPath Foundation application.
+
+          Windows may block this package. Do not disable Smart App Control, Microsoft Defender, or other Windows protections. General users should wait for a signed release.
+
+          ## What it contains
+
+          - Display and control a Rokid AI Glasses RV101 from Windows 11
+          - Live camera/HUD and camera-free power-saving display modes
+          - Initial USB authorization followed by encrypted Android TLS wireless ADB
+
+          See the [README](https://github.com/${{ github.repository }}#readme) for requirements, usage, privacy, and Apache License 2.0 source licensing.
+
+          ## Code signing policy
+
+          Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+          See the project's [Code signing policy](https://github.com/${{ github.repository }}/blob/main/docs/CODE-SIGNING.md).
+          "@
+          gh release create $tag $archive $checksum `
+            --repo '${{ github.repository }}' `
+            --target '${{ github.sha }}' `
+            --title "Rokid Control for Windows $version (unsigned)" `
+            --notes $notes `
+            --prerelease

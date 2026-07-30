@@ -5,6 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
+    <Product>Rokid Control for Windows</Product>
+    <Authors>ksuzukigh</Authors>
+    <Company>Rokid Control open-source project</Company>
+    <Copyright>Copyright © 2026 ksuzukigh</Copyright>
   </PropertyGroup>
 </Project>
 
