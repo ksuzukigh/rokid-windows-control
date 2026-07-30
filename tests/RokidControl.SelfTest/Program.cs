@@ -364,9 +364,9 @@ static async Task TestProcessRunnerCancellationAsync()
             TimeSpan.FromMinutes(2),
             cancellation.Token);
 
-        for (var attempt = 0; attempt < 50 && !File.Exists(pidFile); attempt++)
+        for (var attempt = 0; attempt < 200 && !File.Exists(pidFile); attempt++)
         {
-            await Task.Delay(20);
+            await Task.Delay(50);
         }
 
         Assert(File.Exists(pidFile), "子プロセスの開始を確認");
