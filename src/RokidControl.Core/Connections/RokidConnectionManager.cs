@@ -10,6 +10,8 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         "/data/local/tmp/rokid_windows_control_heartbeat";
     private const string RemoteWatchdogPid =
         "/data/local/tmp/rokid_windows_wifi_watchdog.pid";
+    private static readonly TimeSpan SecureWifiHandoffDuration =
+        TimeSpan.FromSeconds(15);
 
     private readonly IAdbClient _adb;
     private readonly string _addressFile;
@@ -64,11 +66,22 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         var usb = await FindUsbRokidAsync(cancellationToken).ConfigureAwait(false);
         if (usb is not null)
         {
-            progress?.Report("Rokidに接続しています…");
-            return await UseSerialAsync(usb, saveAddress: false).ConfigureAwait(false);
+            return await ConnectUsingUsbBootstrapAsync(
+                usb,
+                progress,
+                cancellationToken).ConfigureAwait(false);
         }
 
         var saved = await ReadSavedAddressAsync(cancellationToken).ConfigureAwait(false);
+        if (saved is not null && IsLegacyFixedPortAddress(saved))
+        {
+            await RejectWifiDeviceAsync(
+                saved,
+                removeSavedAddress: true,
+                cancellationToken).ConfigureAwait(false);
+            saved = null;
+        }
+
         if (saved is not null && await ConnectAsync(saved, cancellationToken).ConfigureAwait(false))
         {
             progress?.Report("Rokidに接続しています…");
@@ -118,9 +131,9 @@ public sealed class RokidConnectionManager : IAsyncDisposable
             usb = await FindUsbRokidAsync(cancellationToken).ConfigureAwait(false);
             if (usb is not null)
             {
-                progress?.Report("RokidのWi-Fiを準備しています…");
-                return await RecoverWifiUsingUsbAsync(
+                return await ConnectUsingUsbBootstrapAsync(
                     usb,
+                    progress,
                     cancellationToken).ConfigureAwait(false);
             }
 
@@ -137,12 +150,25 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         var previous = await GetCurrentSerialAsync().ConfigureAwait(false);
         var saved = await ReadSavedAddressAsync(cancellationToken)
             .ConfigureAwait(false);
+        if (saved is not null && IsLegacyFixedPortAddress(saved))
+        {
+            await RejectWifiDeviceAsync(
+                saved,
+                removeSavedAddress: true,
+                cancellationToken).ConfigureAwait(false);
+            saved = null;
+        }
+
         if (previous.Contains(':', StringComparison.Ordinal))
         {
             _ = await _adb.RunAsync(
                 ["disconnect", previous],
                 TimeSpan.FromSeconds(3),
                 cancellationToken).ConfigureAwait(false);
+            if (IsLegacyFixedPortAddress(previous))
+            {
+                previous = string.Empty;
+            }
         }
 
         for (var attempt = 0; attempt < 20; attempt++)
@@ -152,7 +178,10 @@ public sealed class RokidConnectionManager : IAsyncDisposable
             var usb = await FindUsbRokidAsync(cancellationToken).ConfigureAwait(false);
             if (usb is not null)
             {
-                return await UseSerialAsync(usb, saveAddress: false).ConfigureAwait(false);
+                return await ConnectUsingUsbBootstrapAsync(
+                    usb,
+                    progress: null,
+                    cancellationToken).ConfigureAwait(false);
             }
 
             var wifiCandidates = new[]
@@ -163,6 +192,7 @@ public sealed class RokidConnectionManager : IAsyncDisposable
                     saved,
                 }
                 .Where(candidate => !string.IsNullOrWhiteSpace(candidate))
+                .Where(candidate => !IsLegacyFixedPortAddress(candidate!))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Cast<string>();
             foreach (var candidate in wifiCandidates)
@@ -439,6 +469,15 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         foreach (var device in AdbParsers.ParseDevices(result.Output)
                      .Where(device => device.IsReady && device.IsNetwork))
         {
+            if (IsLegacyFixedPortAddress(device.Serial))
+            {
+                _ = await _adb.RunAsync(
+                    ["disconnect", device.Serial],
+                    TimeSpan.FromSeconds(3),
+                    cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             if (await IsRokidDeviceAsync(device.Serial, cancellationToken)
                     .ConfigureAwait(false))
             {
@@ -447,6 +486,103 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         }
 
         return null;
+    }
+
+    private async Task<string> ConnectUsingUsbBootstrapAsync(
+        string usbSerial,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        progress?.Report("RokidにUSB接続しています…");
+        _ = await UseSerialAsync(usbSerial, saveAddress: false)
+            .ConfigureAwait(false);
+
+        progress?.Report("無線接続を準備しています…");
+        if (!await EnableSecureWifiFromUsbAsync(
+                usbSerial,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return usbSerial;
+        }
+
+        var deadline = DateTimeOffset.UtcNow + SecureWifiHandoffDuration;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var connectedWifi = await FindConnectedWifiRokidAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (connectedWifi is not null)
+            {
+                progress?.Report("無線接続に切り替えています…");
+                return await UseSerialAsync(connectedWifi, saveAddress: true)
+                    .ConfigureAwait(false);
+            }
+
+            var discovered = await ConnectToDiscoveredRokidAsync(
+                progress,
+                cancellationToken).ConfigureAwait(false);
+            if (discovered is not null)
+            {
+                return discovered;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        progress?.Report("USB接続を使用します…");
+        return usbSerial;
+    }
+
+    private async Task<bool> EnableSecureWifiFromUsbAsync(
+        string usbSerial,
+        CancellationToken cancellationToken)
+    {
+        _ = await _adb.RunAsync(
+            [
+                "-s", usbSerial, "shell", "am", "broadcast",
+                "-a", "com.rokid.os.master.assist.server.cmd",
+                "-p", "com.rokid.os.sprite.assistserver",
+                "--es", "cmd_type", "setting_change",
+                "--es", "value",
+                "[{\"key\":\"settings_wifi_enable\",\"value\":\"true\"}]",
+            ],
+            TimeSpan.FromSeconds(5),
+            cancellationToken).ConfigureAwait(false);
+
+        _ = await _adb.RunAsync(
+            [
+                "-s", usbSerial, "shell", "cmd", "wifi",
+                "set-wifi-enabled", "enabled",
+            ],
+            TimeSpan.FromSeconds(5),
+            cancellationToken).ConfigureAwait(false);
+
+        var enable = await _adb.RunAsync(
+            [
+                "-s", usbSerial, "shell", "settings", "put", "global",
+                "adb_wifi_enabled", "1",
+            ],
+            TimeSpan.FromSeconds(5),
+            cancellationToken).ConfigureAwait(false);
+        if (!enable.Succeeded)
+        {
+            return false;
+        }
+
+        var verify = await _adb.RunAsync(
+            [
+                "-s", usbSerial, "shell", "settings", "get", "global",
+                "adb_wifi_enabled",
+            ],
+            TimeSpan.FromSeconds(5),
+            cancellationToken).ConfigureAwait(false);
+        return verify.Succeeded &&
+            string.Equals(
+                verify.Output.Trim(),
+                "1",
+                StringComparison.Ordinal);
     }
 
     private async Task<string?> ConnectToDiscoveredRokidAsync(
@@ -460,6 +596,11 @@ public sealed class RokidConnectionManager : IAsyncDisposable
 
         foreach (var address in AdbParsers.ParseMdnsAddresses(result.Output))
         {
+            if (IsLegacyFixedPortAddress(address))
+            {
+                continue;
+            }
+
             progress?.Report("Rokidに接続しています…");
             if (!await ConnectAsync(address, cancellationToken).ConfigureAwait(false))
             {
@@ -482,128 +623,8 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         return null;
     }
 
-    private async Task<string> RecoverWifiUsingUsbAsync(
-        string usbSerial,
-        CancellationToken cancellationToken)
-    {
-        if (!await IsRokidDeviceAsync(usbSerial, cancellationToken)
-                .ConfigureAwait(false))
-        {
-            throw new RokidConnectionException(RokidConnectionError.NoDevice);
-        }
-
-        var status = await GetWifiStatusAsync(usbSerial, cancellationToken)
-            .ConfigureAwait(false);
-        var openedSettings = false;
-        if (status.Contains("Wifi is disabled", StringComparison.Ordinal))
-        {
-            await RunInputKeyAsync(usbSerial, "KEYCODE_WAKEUP", cancellationToken)
-                .ConfigureAwait(false);
-            _ = await _adb.RunAsync(
-                ["-s", usbSerial, "shell", "wm", "dismiss-keyguard"],
-                TimeSpan.FromSeconds(3),
-                cancellationToken).ConfigureAwait(false);
-            _ = await _adb.RunAsync(
-                [
-                    "-s", usbSerial, "shell", "am", "start", "-a",
-                    "android.settings.WIFI_SETTINGS",
-                ],
-                TimeSpan.FromSeconds(5),
-                cancellationToken).ConfigureAwait(false);
-
-            for (var attempt = 0; attempt < 3; attempt++)
-            {
-                await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken)
-                    .ConfigureAwait(false);
-                await RunInputKeyAsync(usbSerial, "KEYCODE_WAKEUP", cancellationToken)
-                    .ConfigureAwait(false);
-                await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken)
-                    .ConfigureAwait(false);
-                await RunInputKeyAsync(usbSerial, "KEYCODE_ENTER", cancellationToken)
-                    .ConfigureAwait(false);
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken)
-                    .ConfigureAwait(false);
-                status = await GetWifiStatusAsync(usbSerial, cancellationToken)
-                    .ConfigureAwait(false);
-                if (!status.Contains("Wifi is disabled", StringComparison.Ordinal))
-                {
-                    break;
-                }
-            }
-
-            openedSettings = true;
-        }
-
-        string? ipAddress = null;
-        for (var attempt = 0; attempt < 20; attempt++)
-        {
-            status = await GetWifiStatusAsync(usbSerial, cancellationToken)
-                .ConfigureAwait(false);
-            var addressResult = await _adb.RunAsync(
-                ["-s", usbSerial, "shell", "ip", "-4", "addr", "show", "wlan0"],
-                TimeSpan.FromSeconds(5),
-                cancellationToken).ConfigureAwait(false);
-            ipAddress = AdbParsers.ParseIpv4Address(addressResult.Output);
-            if (ipAddress is not null &&
-                status.Contains("Wifi is connected to", StringComparison.Ordinal))
-            {
-                break;
-            }
-
-            ipAddress = null;
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        if (ipAddress is null)
-        {
-            throw new RokidConnectionException(RokidConnectionError.WifiUnavailable);
-        }
-
-        if (openedSettings)
-        {
-            await RunInputKeyAsync(usbSerial, "KEYCODE_WAKEUP", cancellationToken)
-                .ConfigureAwait(false);
-            await RunInputKeyAsync(usbSerial, "KEYCODE_HOME", cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        var address = $"{ipAddress}:5555";
-        _ = await _adb.RunAsync(
-            ["disconnect", address],
-            TimeSpan.FromSeconds(3),
-            cancellationToken).ConfigureAwait(false);
-        _ = await _adb.RunAsync(
-            ["-s", usbSerial, "tcpip", "5555"],
-            TimeSpan.FromSeconds(8),
-            cancellationToken).ConfigureAwait(false);
-        await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken)
-            .ConfigureAwait(false);
-
-        for (var attempt = 0; attempt < 10; attempt++)
-        {
-            if (await ConnectAsync(address, cancellationToken).ConfigureAwait(false))
-            {
-                if (await IsRokidDeviceAsync(address, cancellationToken)
-                        .ConfigureAwait(false))
-                {
-                    return await UseSerialAsync(address, saveAddress: true)
-                        .ConfigureAwait(false);
-                }
-
-                await RejectWifiDeviceAsync(
-                    address,
-                    removeSavedAddress: false,
-                    cancellationToken).ConfigureAwait(false);
-                break;
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        throw new RokidConnectionException(RokidConnectionError.NoDevice);
-    }
+    private static bool IsLegacyFixedPortAddress(string address) =>
+        address.EndsWith(":5555", StringComparison.OrdinalIgnoreCase);
 
     private async Task<bool> IsRokidDeviceAsync(
         string serial,
@@ -703,28 +724,6 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         {
             File.Delete(_addressFile);
         }
-    }
-
-    private async Task<string> GetWifiStatusAsync(
-        string serial,
-        CancellationToken cancellationToken)
-    {
-        var result = await _adb.RunAsync(
-            ["-s", serial, "shell", "cmd", "wifi", "status"],
-            TimeSpan.FromSeconds(5),
-            cancellationToken).ConfigureAwait(false);
-        return result.CombinedOutput;
-    }
-
-    private async Task RunInputKeyAsync(
-        string serial,
-        string key,
-        CancellationToken cancellationToken)
-    {
-        _ = await _adb.RunAsync(
-            ["-s", serial, "shell", "input", "keyevent", key],
-            TimeSpan.FromSeconds(3),
-            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<string> RequireCurrentSerialAsync()

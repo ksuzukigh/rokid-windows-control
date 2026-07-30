@@ -1,7 +1,9 @@
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using RokidControl.App.Services;
@@ -15,6 +17,10 @@ namespace RokidControl.App;
 public partial class MainWindow : Window
 {
     private readonly AppLogger _logger;
+    private readonly RapidFailureGuard _standardFailureGuard =
+        new(2, TimeSpan.FromSeconds(5));
+    private readonly RapidFailureGuard _liveFailureGuard =
+        new(2, TimeSpan.FromSeconds(5));
     private CancellationTokenSource? _operationCancellation;
     private RokidConnectionManager? _connection;
     private ScrcpyProcessManager? _scrcpy;
@@ -22,14 +28,13 @@ public partial class MainWindow : Window
     private WindowsKeyboardController? _keyboard;
     private StandardNavigationOverlay? _standardNavigationOverlay;
     private WriteableBitmap? _liveBitmap;
+    private BgraFrame? _pendingLiveFrame;
     private DisplayMode? _selectedMode;
     private bool _isClosing;
     private bool _shutdownCompleted;
     private bool _isRecovering;
     private bool _preferencesLoaded;
-    private int _liveScreenWidth;
-    private int _liveScreenHeight;
-    private LowerNavigationItem? _selectedNavigationItem;
+    private int _liveFrameDispatchScheduled;
 
     public MainWindow()
     {
@@ -40,8 +45,14 @@ public partial class MainWindow : Window
         _logger.Log("=== Rokid Control started ===");
     }
 
+    private void Window_Loaded(object sender, RoutedEventArgs eventArguments)
+    {
+        FitInitialWindowToCurrentWorkArea(560, 600, 440, 480);
+    }
+
     private async void StandardButton_Click(object sender, RoutedEventArgs e)
     {
+        _standardFailureGuard.Reset();
         _selectedMode = DisplayMode.Standard;
         await StartSelectedModeAsync();
     }
@@ -58,12 +69,22 @@ public partial class MainWindow : Window
             return;
         }
 
+        _liveFailureGuard.Reset();
         _selectedMode = DisplayMode.Live;
         await StartSelectedModeAsync();
     }
 
     private async void RetryButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_selectedMode == DisplayMode.Standard)
+        {
+            _standardFailureGuard.Reset();
+        }
+        else if (_selectedMode == DisplayMode.Live)
+        {
+            _liveFailureGuard.Reset();
+        }
+
         if (_selectedMode == DisplayMode.Standard && _connection is not null)
         {
             await RecoverStandardSessionAsync();
@@ -165,23 +186,27 @@ public partial class MainWindow : Window
         }
 
         var scrcpy = new ScrcpyProcessManager(resources, _logger);
+        var input = new PersistentAdbInputSession(
+            resources.AdbPath,
+            serial,
+            resources.CreateEnvironment(),
+            _logger.Log);
+        await input.VerifyReadyAsync(cancellationToken);
         var keyboard = new WindowsKeyboardController(
-                _connection,
-                _logger,
-                screenWidth,
-                screenHeight);
+            input,
+            _logger,
+            screenWidth,
+            screenHeight);
         StandardNavigationOverlay? navigationOverlay = null;
         try
         {
             scrcpy.Exited += Scrcpy_Exited;
             scrcpy.StartStandard(serial);
             keyboard.QuitRequested += Keyboard_QuitRequested;
-            keyboard.NavigationSelectionChanged +=
-                Keyboard_NavigationSelectionChanged;
+            keyboard.ApplicationMenuModeChanged +=
+                Keyboard_ApplicationMenuModeChanged;
             navigationOverlay = new StandardNavigationOverlay(
-                scrcpy.ProcessId,
-                screenWidth,
-                screenHeight);
+                scrcpy.ProcessId);
             keyboard.Start(scrcpy.ProcessId);
             var activated = await scrcpy.ActivateWindowAsync(
                 cancellationToken);
@@ -199,8 +224,8 @@ public partial class MainWindow : Window
         catch
         {
             keyboard.QuitRequested -= Keyboard_QuitRequested;
-            keyboard.NavigationSelectionChanged -=
-                Keyboard_NavigationSelectionChanged;
+            keyboard.ApplicationMenuModeChanged -=
+                Keyboard_ApplicationMenuModeChanged;
             navigationOverlay?.Dispose();
             keyboard.Dispose();
             scrcpy.Exited -= Scrcpy_Exited;
@@ -226,8 +251,14 @@ public partial class MainWindow : Window
             _logger,
             screenWidth,
             screenHeight);
+        var input = new PersistentAdbInputSession(
+            resources.AdbPath,
+            serial,
+            resources.CreateEnvironment(),
+            _logger.Log);
+        await input.VerifyReadyAsync(cancellationToken);
         var keyboard = new WindowsKeyboardController(
-            _connection,
+            input,
             _logger,
             screenWidth,
             screenHeight);
@@ -237,16 +268,13 @@ public partial class MainWindow : Window
             liveSession.FrameReady += LiveSession_FrameReady;
             liveSession.Failed += LiveSession_Failed;
             keyboard.QuitRequested += Keyboard_QuitRequested;
-            keyboard.NavigationSelectionChanged +=
-                Keyboard_NavigationSelectionChanged;
+            keyboard.ApplicationMenuModeChanged +=
+                Keyboard_ApplicationMenuModeChanged;
             await liveSession.StartAsync(
                 serial,
                 new Progress<string>(ShowProgress),
                 cancellationToken);
             keyboard.Start(Environment.ProcessId);
-            _liveScreenWidth = screenWidth;
-            _liveScreenHeight = screenHeight;
-            _selectedNavigationItem = null;
             _liveSession = liveSession;
             _keyboard = keyboard;
             ShowLivePanel();
@@ -254,8 +282,8 @@ public partial class MainWindow : Window
         catch
         {
             keyboard.QuitRequested -= Keyboard_QuitRequested;
-            keyboard.NavigationSelectionChanged -=
-                Keyboard_NavigationSelectionChanged;
+            keyboard.ApplicationMenuModeChanged -=
+                Keyboard_ApplicationMenuModeChanged;
             keyboard.Dispose();
             liveSession.FrameReady -= LiveSession_FrameReady;
             liveSession.Failed -= LiveSession_Failed;
@@ -330,6 +358,15 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_standardFailureGuard.RecordFailure(DateTimeOffset.UtcNow))
+        {
+            _logger.Log("scrcpyの短時間終了が続いたため自動再接続を停止");
+            StopLocalSession();
+            ShowError(
+                "画面の接続が短時間に繰り返し終了しました。通信状態を確認して「再接続」を押すか、「終了」を押してください。");
+            return;
+        }
+
         await RecoverStandardSessionAsync();
     }
 
@@ -389,11 +426,52 @@ public partial class MainWindow : Window
         Dispatcher.InvokeAsync(Close);
     }
 
+    internal void ActivateCurrentSession()
+    {
+        Dispatcher.VerifyAccess();
+        if (_isClosing)
+        {
+            return;
+        }
+
+        if (_scrcpy is not null)
+        {
+            _ = ActivateStandardSessionAsync();
+            return;
+        }
+
+        Show();
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        Activate();
+    }
+
+    private async Task ActivateStandardSessionAsync()
+    {
+        try
+        {
+            if (_scrcpy is not null &&
+                !await _scrcpy.ActivateWindowAsync(CancellationToken.None))
+            {
+                _logger.Log("既存の背景なし画面を前面にできませんでした。");
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.Log(
+                $"既存の背景なし画面を前面にできませんでした: {exception.Message}");
+        }
+    }
+
     private void LiveSession_FrameReady(
         object? sender,
         LiveFrameEventArgs eventArguments)
     {
-        Dispatcher.InvokeAsync(() => DisplayLiveFrame(eventArguments.Frame));
+        Interlocked.Exchange(ref _pendingLiveFrame, eventArguments.Frame);
+        ScheduleLiveFrameDisplay();
     }
 
     private void LiveSession_Failed(Exception exception)
@@ -408,6 +486,16 @@ public partial class MainWindow : Window
     {
         if (_isClosing || _isRecovering || _connection is null)
         {
+            return;
+        }
+
+        if (cause is not null &&
+            _liveFailureGuard.RecordFailure(DateTimeOffset.UtcNow))
+        {
+            _logger.Log("ライブ映像の短時間終了が続いたため自動再接続を停止");
+            StopLocalSession();
+            ShowError(
+                "ライブ映像の接続が短時間に繰り返し終了しました。通信状態を確認して「再接続」を押すか、「終了」を押してください。");
             return;
         }
 
@@ -481,7 +569,35 @@ public partial class MainWindow : Window
             frame.Pixels,
             frame.Stride,
             0);
-        UpdateNavigationSelectionRing();
+    }
+
+    private void ScheduleLiveFrameDisplay()
+    {
+        if (Interlocked.CompareExchange(
+                ref _liveFrameDispatchScheduled,
+                1,
+                0) != 0)
+        {
+            return;
+        }
+
+        Dispatcher.InvokeAsync(DisplayLatestLiveFrame);
+    }
+
+    private void DisplayLatestLiveFrame()
+    {
+        Dispatcher.VerifyAccess();
+        var frame = Interlocked.Exchange(ref _pendingLiveFrame, null);
+        if (frame is not null && !_isClosing && _liveSession is not null)
+        {
+            DisplayLiveFrame(frame);
+        }
+
+        Volatile.Write(ref _liveFrameDispatchScheduled, 0);
+        if (Volatile.Read(ref _pendingLiveFrame) is not null)
+        {
+            ScheduleLiveFrameDisplay();
+        }
     }
 
     private void ShowLivePanel()
@@ -491,13 +607,70 @@ public partial class MainWindow : Window
         ProgressPanel.Visibility = Visibility.Collapsed;
         ErrorPanel.Visibility = Visibility.Collapsed;
         LivePanel.Visibility = Visibility.Visible;
+        KeyboardHint.Visibility = Visibility.Visible;
+        KeyboardHintText.Text = NavigationHintText.Normal;
         Title = "Rokid AI Glasses RV101（ライブ映像）";
-        MinWidth = 360;
-        MinHeight = 480;
-        Width = 480;
-        Height = 720;
+        WindowStyle = WindowStyle.SingleBorderWindow;
+        ResizeMode = ResizeMode.CanResize;
         Show();
         Activate();
+    }
+
+    private void FitInitialWindowToCurrentWorkArea(
+        double preferredWidth,
+        double preferredHeight,
+        double preferredMinWidth,
+        double preferredMinHeight)
+    {
+        var workArea = GetCurrentMonitorWorkArea();
+        var availableWidth = Math.Max(320, workArea.Width - 32);
+        var availableHeight = Math.Max(360, workArea.Height - 32);
+        var targetWidth = Math.Min(preferredWidth, availableWidth);
+        var targetHeight = Math.Min(preferredHeight, availableHeight);
+
+        MinWidth = Math.Min(preferredMinWidth, targetWidth);
+        MinHeight = Math.Min(preferredMinHeight, targetHeight);
+        Width = targetWidth;
+        Height = targetHeight;
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = Math.Clamp(
+            Left,
+            workArea.Left,
+            Math.Max(workArea.Left, workArea.Right - targetWidth));
+        Top = Math.Clamp(
+            Top,
+            workArea.Top,
+            Math.Max(workArea.Top, workArea.Bottom - targetHeight));
+    }
+
+    private Rect GetCurrentMonitorWorkArea()
+    {
+        var windowHandle = new WindowInteropHelper(this).Handle;
+        if (windowHandle == IntPtr.Zero)
+        {
+            return SystemParameters.WorkArea;
+        }
+
+        var monitor = NativeMethods.MonitorFromWindow(
+            windowHandle,
+            NativeMethods.MonitorDefaultToNearest);
+        var monitorInfo = new NativeMethods.MonitorInfo
+        {
+            Size = (uint)Marshal.SizeOf<NativeMethods.MonitorInfo>(),
+        };
+        if (monitor == IntPtr.Zero ||
+            !NativeMethods.GetMonitorInfo(monitor, ref monitorInfo))
+        {
+            return SystemParameters.WorkArea;
+        }
+
+        var dpi = NativeMethods.GetDpiForWindow(windowHandle);
+        var scale = dpi > 0 ? dpi / 96d : 1d;
+        return new Rect(
+            monitorInfo.WorkArea.Left / scale,
+            monitorInfo.WorkArea.Top / scale,
+            (monitorInfo.WorkArea.Right - monitorInfo.WorkArea.Left) / scale,
+            (monitorInfo.WorkArea.Bottom - monitorInfo.WorkArea.Top) / scale);
     }
 
     private void LiveVisibilitySlider_ValueChanged(
@@ -523,70 +696,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Keyboard_NavigationSelectionChanged(
-        LowerNavigationItem? selectedItem)
+    private void Keyboard_ApplicationMenuModeChanged(bool active)
     {
         Dispatcher.InvokeAsync(() =>
         {
-            _selectedNavigationItem = selectedItem;
-            UpdateNavigationSelectionRing();
-            _standardNavigationOverlay?.SetSelection(selectedItem);
+            KeyboardHintText.Text = active
+                ? NavigationHintText.ApplicationMenu
+                : NavigationHintText.Normal;
+            _standardNavigationOverlay?.SetApplicationMenuActive(active);
         });
-    }
-
-    private void LiveImage_SizeChanged(
-        object sender,
-        SizeChangedEventArgs eventArguments)
-    {
-        UpdateNavigationSelectionRing();
-    }
-
-    private void UpdateNavigationSelectionRing()
-    {
-        Dispatcher.VerifyAccess();
-        if (_selectedNavigationItem is null ||
-            _liveBitmap is null ||
-            _liveScreenWidth <= 0 ||
-            _liveScreenHeight <= 0 ||
-            LiveImage.ActualWidth <= 0 ||
-            LiveImage.ActualHeight <= 0)
-        {
-            NavigationSelectionOuter.Visibility = Visibility.Collapsed;
-            NavigationSelectionRing.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        var scale = Math.Min(
-            LiveImage.ActualWidth / _liveBitmap.PixelWidth,
-            LiveImage.ActualHeight / _liveBitmap.PixelHeight);
-        var displayedWidth = _liveBitmap.PixelWidth * scale;
-        var displayedHeight = _liveBitmap.PixelHeight * scale;
-        var offsetX = (LiveImage.ActualWidth - displayedWidth) / 2;
-        var offsetY = (LiveImage.ActualHeight - displayedHeight) / 2;
-        var devicePoint = _selectedNavigationItem.Value.GetHighlightPoint(
-            _liveScreenWidth,
-            _liveScreenHeight);
-        var bitmapX =
-            devicePoint.X * (double)_liveBitmap.PixelWidth / _liveScreenWidth;
-        var bitmapY =
-            devicePoint.Y * (double)_liveBitmap.PixelHeight / _liveScreenHeight;
-        var diameter = Math.Max(44 * scale, 30);
-        var left = offsetX + bitmapX * scale - diameter / 2;
-        var top = offsetY + bitmapY * scale - diameter / 2;
-
-        NavigationSelectionOuter.Width = diameter - 6;
-        NavigationSelectionOuter.Height = diameter - 6;
-        NavigationSelectionOuter.StrokeThickness = 7;
-        Canvas.SetLeft(NavigationSelectionOuter, left + 3);
-        Canvas.SetTop(NavigationSelectionOuter, top + 3);
-        NavigationSelectionOuter.Visibility = Visibility.Visible;
-
-        NavigationSelectionRing.Width = diameter - 10;
-        NavigationSelectionRing.Height = diameter - 10;
-        NavigationSelectionRing.StrokeThickness = 3;
-        Canvas.SetLeft(NavigationSelectionRing, left + 5);
-        Canvas.SetTop(NavigationSelectionRing, top + 5);
-        NavigationSelectionRing.Visibility = Visibility.Visible;
     }
 
     private async void LiveImage_MouseLeftButtonDown(
@@ -708,6 +826,10 @@ public partial class MainWindow : Window
         }
 
         _isClosing = true;
+        using var shutdownDisplayCancellation =
+            new CancellationTokenSource();
+        var shutdownDisplayTask = ShowShutdownIfSlowAsync(
+            shutdownDisplayCancellation.Token);
         _operationCancellation?.Cancel();
         StopLocalSession();
 
@@ -733,7 +855,31 @@ public partial class MainWindow : Window
         _logger.Log("Rokid Control終了");
         _logger.Dispose();
         _shutdownCompleted = true;
+        shutdownDisplayCancellation.Cancel();
+        try
+        {
+            await shutdownDisplayTask;
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown completed before the delayed status was needed.
+        }
+
         Application.Current.Shutdown();
+    }
+
+    private async Task ShowShutdownIfSlowAsync(
+        CancellationToken cancellationToken)
+    {
+        await Task.Delay(
+            TimeSpan.FromMilliseconds(400),
+            cancellationToken);
+        if (!_shutdownCompleted)
+        {
+            Show();
+            ShowProgress("終了しています…");
+            ProgressCancelButton.IsEnabled = false;
+        }
     }
 
     private void StopLocalSession()
@@ -741,8 +887,8 @@ public partial class MainWindow : Window
         if (_keyboard is not null)
         {
             _keyboard.QuitRequested -= Keyboard_QuitRequested;
-            _keyboard.NavigationSelectionChanged -=
-                Keyboard_NavigationSelectionChanged;
+            _keyboard.ApplicationMenuModeChanged -=
+                Keyboard_ApplicationMenuModeChanged;
             _keyboard.Dispose();
             _keyboard = null;
         }
@@ -766,12 +912,49 @@ public partial class MainWindow : Window
         }
 
         _liveBitmap = null;
-        _liveScreenWidth = 0;
-        _liveScreenHeight = 0;
-        _selectedNavigationItem = null;
+        Interlocked.Exchange(ref _pendingLiveFrame, null);
         LiveImage.Source = null;
-        NavigationSelectionOuter.Visibility = Visibility.Collapsed;
-        NavigationSelectionRing.Visibility = Visibility.Collapsed;
+        KeyboardHint.Visibility = Visibility.Collapsed;
+    }
+
+    private static class NativeMethods
+    {
+        internal const uint MonitorDefaultToNearest = 2;
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct NativeRect
+        {
+            internal int Left;
+            internal int Top;
+            internal int Right;
+            internal int Bottom;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct MonitorInfo
+        {
+            internal uint Size;
+            internal NativeRect MonitorArea;
+            internal NativeRect WorkArea;
+            internal uint Flags;
+        }
+
+        [DllImport("user32.dll")]
+        internal static extern IntPtr MonitorFromWindow(
+            IntPtr windowHandle,
+            uint flags);
+
+        [DllImport(
+            "user32.dll",
+            CharSet = CharSet.Unicode,
+            SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetMonitorInfo(
+            IntPtr monitor,
+            ref MonitorInfo monitorInfo);
+
+        [DllImport("user32.dll")]
+        internal static extern uint GetDpiForWindow(IntPtr windowHandle);
     }
 }
 

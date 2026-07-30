@@ -9,6 +9,7 @@ public enum KeyboardCommand
     Enter,
     Back,
     Home,
-    CenterTap,
+    Memo,
+    Applications,
     Quit,
 }

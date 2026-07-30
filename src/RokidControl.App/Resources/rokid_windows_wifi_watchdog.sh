@@ -4,8 +4,6 @@ HEARTBEAT_FILE="/data/local/tmp/rokid_windows_control_heartbeat"
 PID_FILE="/data/local/tmp/rokid_windows_wifi_watchdog.pid"
 LOG_FILE="/data/local/tmp/rokid_windows_wifi_watchdog.log"
 MAX_HEARTBEAT_AGE="${1:-20}"
-KEEP_AWAKE_INTERVAL=10
-last_keep_awake_epoch=0
 
 cleanup() {
     rm -f "$PID_FILE"
@@ -37,13 +35,6 @@ while true; do
         exit 0
     fi
 
-    keep_awake_age=$((now_epoch - last_keep_awake_epoch))
-    if [ "$keep_awake_age" -ge "$KEEP_AWAKE_INTERVAL" ]; then
-        input keyevent KEYCODE_WAKEUP >/dev/null 2>&1
-        input keyevent KEYCODE_UNKNOWN >/dev/null 2>&1
-        last_keep_awake_epoch="$now_epoch"
-    fi
-
     wifi_state="$(cmd wifi status 2>/dev/null | sed -n '1p')"
     if [ "$wifi_state" = "Wifi is disabled" ]; then
         printf '%s Wi-Fi disabled; enabling\n' "$(date '+%H:%M:%S')" >> "$LOG_FILE"
@@ -53,4 +44,3 @@ while true; do
         sleep 1
     fi
 done
-

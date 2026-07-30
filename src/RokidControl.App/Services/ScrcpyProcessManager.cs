@@ -1,13 +1,17 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using RokidControl.WindowsCapture;
 
 namespace RokidControl.App.Services;
 
 internal sealed class ScrcpyProcessManager : IDisposable
 {
+    private const int MaximumRecentOutputLines = 20;
     private readonly AppResources _resources;
     private readonly AppLogger _logger;
+    private readonly object _outputLock = new();
+    private readonly Queue<string> _recentOutput = new();
     private Process? _process;
     private bool _disposed;
 
@@ -31,6 +35,8 @@ internal sealed class ScrcpyProcessManager : IDisposable
             [
                 "--no-audio",
                 "--keyboard=disabled",
+                "--stay-awake",
+                "--screen-off-timeout=86400",
                 "--window-title=Rokid AI Glasses RV101（Windows操作モード）",
             ]);
     }
@@ -44,6 +50,8 @@ internal sealed class ScrcpyProcessManager : IDisposable
                 "--no-audio",
                 "--max-fps=15",
                 "--keyboard=disabled",
+                "--stay-awake",
+                "--screen-off-timeout=86400",
                 "--window-borderless",
                 $"--window-width={width}",
                 $"--window-height={height}",
@@ -81,10 +89,22 @@ internal sealed class ScrcpyProcessManager : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         var process = _process ??
             throw new InvalidOperationException("scrcpyは起動していません。");
-        var windowHandle = await WindowHandleFinder.WaitForMainWindowAsync(
-            process,
-            TimeSpan.FromSeconds(8),
-            cancellationToken);
+        nint windowHandle;
+        try
+        {
+            windowHandle = await WindowHandleFinder.WaitForMainWindowAsync(
+                process,
+                TimeSpan.FromSeconds(12),
+                cancellationToken);
+        }
+        catch (TimeoutException exception)
+        {
+            LogRecentOutput("scrcpy起動待機タイムアウト");
+            throw new TimeoutException(
+                "Rokid画面の受信を開始できませんでした。Rokidが起動中で、Wi-Fiに接続されていることを確認して、もう一度試してください。",
+                exception);
+        }
+
         _ = NativeMethods.ShowWindow(windowHandle, 5);
         return NativeMethods.SetForegroundWindow(windowHandle);
     }
@@ -106,6 +126,10 @@ internal sealed class ScrcpyProcessManager : IDisposable
             UseShellExecute = false,
             CreateNoWindow = true,
             WorkingDirectory = _resources.VendorDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
         startInfo.ArgumentList.Add("--serial");
         startInfo.ArgumentList.Add(serial);
@@ -124,14 +148,20 @@ internal sealed class ScrcpyProcessManager : IDisposable
             StartInfo = startInfo,
             EnableRaisingEvents = true,
         };
+        process.OutputDataReceived += Process_OutputDataReceived;
+        process.ErrorDataReceived += Process_ErrorDataReceived;
         process.Exited += Process_Exited;
         if (!process.Start())
         {
+            process.OutputDataReceived -= Process_OutputDataReceived;
+            process.ErrorDataReceived -= Process_ErrorDataReceived;
             process.Dispose();
             throw new InvalidOperationException("Rokid画面を開始できませんでした。");
         }
 
         _process = process;
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
         _logger.Log($"scrcpy開始 mode={sessionName} pid={process.Id}");
     }
 
@@ -146,6 +176,8 @@ internal sealed class ScrcpyProcessManager : IDisposable
         if (_process is not null)
         {
             _process.Exited -= Process_Exited;
+            _process.OutputDataReceived -= Process_OutputDataReceived;
+            _process.ErrorDataReceived -= Process_ErrorDataReceived;
             try
             {
                 if (!_process.HasExited)
@@ -162,6 +194,48 @@ internal sealed class ScrcpyProcessManager : IDisposable
             _process.Dispose();
             _process = null;
         }
+    }
+
+    private void Process_OutputDataReceived(
+        object sender,
+        DataReceivedEventArgs e) =>
+        RecordOutput("stdout", e.Data);
+
+    private void Process_ErrorDataReceived(
+        object sender,
+        DataReceivedEventArgs e) =>
+        RecordOutput("stderr", e.Data);
+
+    private void RecordOutput(string stream, string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+        {
+            return;
+        }
+
+        lock (_outputLock)
+        {
+            _recentOutput.Enqueue($"{stream}: {line}");
+            while (_recentOutput.Count > MaximumRecentOutputLines)
+            {
+                _recentOutput.Dequeue();
+            }
+        }
+
+        _logger.Log($"scrcpy {stream}: {line}");
+    }
+
+    private void LogRecentOutput(string prefix)
+    {
+        string output;
+        lock (_outputLock)
+        {
+            output = _recentOutput.Count == 0
+                ? "(出力なし)"
+                : string.Join(" | ", _recentOutput);
+        }
+
+        _logger.Log($"{prefix}: {output}");
     }
 
     private void Process_Exited(object? sender, EventArgs e)

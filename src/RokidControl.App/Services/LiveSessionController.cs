@@ -257,7 +257,9 @@ internal sealed class LiveSessionController : IDisposable
                 camera,
                 hud,
                 visibility,
-                visibility);
+                0,
+                _width,
+                _height);
             if (Volatile.Read(ref _disposed) == 0)
             {
                 FrameReady?.Invoke(this, new LiveFrameEventArgs(result));

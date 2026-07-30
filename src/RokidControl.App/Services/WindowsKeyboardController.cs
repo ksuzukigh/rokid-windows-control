@@ -19,37 +19,38 @@ internal sealed class WindowsKeyboardController : IDisposable
     private const int VkControl = 0x11;
     private const int VkMenu = 0x12;
 
-    private readonly RokidConnectionManager _connection;
+    private readonly IRokidInputSession _input;
     private readonly AppLogger _logger;
-    private readonly int _screenWidth;
-    private readonly int _screenHeight;
-    private readonly KeyboardNavigationState _navigation = new();
+    private readonly KeyboardCommandProcessor _commandProcessor;
     private readonly Channel<QueuedAction> _actions =
         Channel.CreateUnbounded<QueuedAction>(
             new UnboundedChannelOptions { SingleReader = true });
     private readonly CancellationTokenSource _cancellation = new();
     private readonly HashSet<uint> _heldKeys = [];
     private readonly HashSet<uint> _swallowedKeys = [];
-    private readonly object _spaceLock = new();
     private readonly NativeMethods.HookProcedure _keyboardProcedure;
     private readonly NativeMethods.HookProcedure _mouseProcedure;
     private readonly Task _actionTask;
-    private CancellationTokenSource? _pendingSpace;
     private IntPtr _keyboardHook;
     private IntPtr _mouseHook;
     private int _targetProcessId;
     private bool _disposed;
 
     public WindowsKeyboardController(
-        RokidConnectionManager connection,
+        IRokidInputSession input,
         AppLogger logger,
         int screenWidth,
         int screenHeight)
     {
-        _connection = connection;
+        _input = input;
         _logger = logger;
-        _screenWidth = screenWidth;
-        _screenHeight = screenHeight;
+        _commandProcessor = new KeyboardCommandProcessor(
+            input,
+            screenWidth,
+            screenHeight,
+            logger.Log);
+        _commandProcessor.ApplicationMenuModeChanged +=
+            CommandProcessor_ApplicationMenuModeChanged;
         _keyboardProcedure = KeyboardHook;
         _mouseProcedure = MouseHook;
         _actionTask = ProcessActionsAsync(_cancellation.Token);
@@ -57,7 +58,7 @@ internal sealed class WindowsKeyboardController : IDisposable
 
     public event Action? QuitRequested;
 
-    public event Action<LowerNavigationItem?>? NavigationSelectionChanged;
+    public event Action<bool>? ApplicationMenuModeChanged;
 
     public void Start(int targetProcessId)
     {
@@ -100,13 +101,6 @@ internal sealed class WindowsKeyboardController : IDisposable
 
         _disposed = true;
         DisposeHooks();
-        lock (_spaceLock)
-        {
-            _pendingSpace?.Cancel();
-            _pendingSpace?.Dispose();
-            _pendingSpace = null;
-        }
-
         _actions.Writer.TryComplete();
         _cancellation.Cancel();
         try
@@ -121,6 +115,9 @@ internal sealed class WindowsKeyboardController : IDisposable
         }
 
         _cancellation.Dispose();
+        _commandProcessor.ApplicationMenuModeChanged -=
+            CommandProcessor_ApplicationMenuModeChanged;
+        _input.Dispose();
         _logger.Log("Windows入力監視終了");
     }
 
@@ -195,10 +192,6 @@ internal sealed class WindowsKeyboardController : IDisposable
         {
             QuitRequested?.Invoke();
         }
-        else if (command == KeyboardCommand.CenterTap)
-        {
-            HandleSpacePressed();
-        }
         else
         {
             _actions.Writer.TryWrite(new QueuedAction(command.Value));
@@ -213,7 +206,8 @@ internal sealed class WindowsKeyboardController : IDisposable
             message.ToInt32() is WmLeftButtonDown or WmRightButtonDown &&
             TargetIsActive())
         {
-            _actions.Writer.TryWrite(new QueuedAction(ResetNavigation: true));
+            _actions.Writer.TryWrite(
+                new QueuedAction(ResetApplicationMenu: true));
         }
 
         return NativeMethods.CallNextHookEx(_mouseHook, code, message, data);
@@ -233,52 +227,6 @@ internal sealed class WindowsKeyboardController : IDisposable
         return processId == (uint)_targetProcessId;
     }
 
-    private void HandleSpacePressed()
-    {
-        lock (_spaceLock)
-        {
-            if (_pendingSpace is not null)
-            {
-                _pendingSpace.Cancel();
-                _pendingSpace.Dispose();
-                _pendingSpace = null;
-                _actions.Writer.TryWrite(new QueuedAction(DoubleTap: true));
-                return;
-            }
-
-            var pending = CancellationTokenSource.CreateLinkedTokenSource(
-                _cancellation.Token);
-            _pendingSpace = pending;
-            _ = CompleteSingleTapAsync(pending);
-        }
-    }
-
-    private async Task CompleteSingleTapAsync(CancellationTokenSource pending)
-    {
-        try
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(350), pending.Token)
-                .ConfigureAwait(false);
-            _actions.Writer.TryWrite(
-                new QueuedAction(KeyboardCommand.CenterTap));
-        }
-        catch (OperationCanceledException) when (pending.IsCancellationRequested)
-        {
-            // A second Space changed this into a double tap.
-        }
-        finally
-        {
-            lock (_spaceLock)
-            {
-                if (ReferenceEquals(_pendingSpace, pending))
-                {
-                    _pendingSpace = null;
-                    pending.Dispose();
-                }
-            }
-        }
-    }
-
     private async Task ProcessActionsAsync(CancellationToken cancellationToken)
     {
         try
@@ -286,200 +234,39 @@ internal sealed class WindowsKeyboardController : IDisposable
             await foreach (var action in _actions.Reader.ReadAllAsync(
                                cancellationToken).ConfigureAwait(false))
             {
-                if (action.ResetNavigation)
+                try
                 {
-                    ResetNavigation();
-                    continue;
-                }
+                    if (action.ResetApplicationMenu)
+                    {
+                        _commandProcessor.ResetApplicationMenu();
+                        continue;
+                    }
 
-                if (action.DoubleTap)
-                {
-                    await TapCenterAsync(cancellationToken).ConfigureAwait(false);
-                    await Task.Delay(
-                        TimeSpan.FromMilliseconds(80),
+                    await _commandProcessor.HandleAsync(
+                        action.Command!.Value,
                         cancellationToken).ConfigureAwait(false);
-                    await TapCenterAsync(cancellationToken).ConfigureAwait(false);
-                    _logger.Log("中央ダブルタップ");
-                    continue;
                 }
-
-                await HandleCommandAsync(
-                    action.Command!.Value,
-                    cancellationToken).ConfigureAwait(false);
+                catch (OperationCanceledException)
+                    when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    _logger.Log(
+                        $"入力操作を処理できませんでした。次の操作を待ちます: {exception.Message}");
+                }
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Normal shutdown.
         }
-        catch (Exception exception)
-        {
-            _logger.Log($"入力処理エラー {exception.Message}");
-        }
     }
 
-    private async Task HandleCommandAsync(
-        KeyboardCommand command,
-        CancellationToken cancellationToken)
+    private void CommandProcessor_ApplicationMenuModeChanged(bool active)
     {
-        switch (command)
-        {
-            case KeyboardCommand.Left:
-                await HandleHorizontalAsync(
-                    -1,
-                    "KEYCODE_DPAD_LEFT",
-                    cancellationToken).ConfigureAwait(false);
-                break;
-            case KeyboardCommand.Right:
-                await HandleHorizontalAsync(
-                    1,
-                    "KEYCODE_DPAD_RIGHT",
-                    cancellationToken).ConfigureAwait(false);
-                break;
-            case KeyboardCommand.Down:
-                if (_navigation.IsLowerRow)
-                {
-                    PublishSelection();
-                }
-                else if (await _connection.IsLauncherActiveAsync(cancellationToken)
-                             .ConfigureAwait(false))
-                {
-                    // Rokid hides the launcher contents after an idle period.
-                    // Forward the first Down press so the device reveals the
-                    // launcher row before showing our local selection ring.
-                    await SendKeyAsync(
-                        "KEYCODE_DPAD_DOWN",
-                        cancellationToken).ConfigureAwait(false);
-                    _navigation.EnterLowerRow();
-                    PublishSelection();
-                }
-                else
-                {
-                    await SendKeyAsync(
-                        "KEYCODE_DPAD_DOWN",
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                break;
-            case KeyboardCommand.Up:
-                if (_navigation.LeaveLowerRow())
-                {
-                    PublishSelection();
-                }
-                else
-                {
-                    await SendKeyAsync(
-                        "KEYCODE_DPAD_UP",
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                break;
-            case KeyboardCommand.Enter:
-                if (_navigation.IsLowerRow)
-                {
-                    var selected = _navigation.LowerItem!.Value;
-                    _navigation.LeaveLowerRow();
-                    PublishSelection();
-                    await WakeAndTapAsync(selected, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                else
-                {
-                    await SendKeyAsync(
-                        "KEYCODE_ENTER",
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                break;
-            case KeyboardCommand.Back:
-                if (_navigation.LeaveLowerRow())
-                {
-                    PublishSelection();
-                }
-                else
-                {
-                    await SendKeyAsync(
-                        "KEYCODE_BACK",
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                break;
-            case KeyboardCommand.Home:
-                ResetNavigation();
-                await WakeAndTapAsync(
-                    LowerNavigationItem.Home,
-                    cancellationToken).ConfigureAwait(false);
-                break;
-            case KeyboardCommand.CenterTap:
-                await TapCenterAsync(cancellationToken).ConfigureAwait(false);
-                _logger.Log("中央タップ");
-                break;
-            case KeyboardCommand.Quit:
-            default:
-                break;
-        }
-    }
-
-    private async Task HandleHorizontalAsync(
-        int offset,
-        string androidKey,
-        CancellationToken cancellationToken)
-    {
-        if (_navigation.IsLowerRow)
-        {
-            _navigation.MoveLowerRow(offset);
-            PublishSelection();
-            return;
-        }
-
-        await SendKeyAsync(androidKey, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task WakeAndTapAsync(
-        LowerNavigationItem item,
-        CancellationToken cancellationToken)
-    {
-        await SendKeyAsync("KEYCODE_WAKEUP", cancellationToken)
-            .ConfigureAwait(false);
-        await SendKeyAsync("KEYCODE_HOME", cancellationToken)
-            .ConfigureAwait(false);
-        await Task.Delay(TimeSpan.FromMilliseconds(350), cancellationToken)
-            .ConfigureAwait(false);
-        var point = item.GetDevicePoint(_screenWidth, _screenHeight);
-        await _connection.TapAsync(point.X, point.Y, cancellationToken)
-            .ConfigureAwait(false);
-        _logger.Log($"下段を開く {item.GetTitle()}");
-    }
-
-    private async Task TapCenterAsync(CancellationToken cancellationToken)
-    {
-        await _connection.TapAsync(
-            _screenWidth / 2,
-            _screenHeight / 2,
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task SendKeyAsync(
-        string androidKey,
-        CancellationToken cancellationToken)
-    {
-        await _connection.SendKeyEventAsync(androidKey, cancellationToken)
-            .ConfigureAwait(false);
-        _logger.Log($"キー {androidKey}");
-    }
-
-    private void ResetNavigation()
-    {
-        if (_navigation.LeaveLowerRow())
-        {
-            PublishSelection();
-        }
-    }
-
-    private void PublishSelection()
-    {
-        NavigationSelectionChanged?.Invoke(
-            _navigation.LowerItem);
+        ApplicationMenuModeChanged?.Invoke(active);
     }
 
     private void DisposeHooks()
@@ -499,8 +286,7 @@ internal sealed class WindowsKeyboardController : IDisposable
 
     private sealed record QueuedAction(
         KeyboardCommand? Command = null,
-        bool ResetNavigation = false,
-        bool DoubleTap = false);
+        bool ResetApplicationMenu = false);
 
     private static class NativeMethods
     {

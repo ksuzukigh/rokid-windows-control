@@ -2,39 +2,55 @@ namespace RokidControl.Core.Imaging;
 
 public static class HudCompositor
 {
+    private const double MinimumHudIntensity = 0.5;
+    private const double MaximumHudIntensity = 4.3;
+
     public static BgraFrame Compose(
         BgraFrame camera,
         BgraFrame hud,
         double visibility,
-        double thickness)
+        double thickness,
+        int? outputWidth = null,
+        int? outputHeight = null)
     {
         ArgumentNullException.ThrowIfNull(camera);
         ArgumentNullException.ThrowIfNull(hud);
 
-        if (camera.Width != hud.Width || camera.Height != hud.Height)
-        {
-            throw new ArgumentException("Camera and HUD frames must have the same dimensions.");
-        }
+        var targetWidth = outputWidth ?? camera.Width;
+        var targetHeight = outputHeight ?? camera.Height;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetWidth);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetHeight);
 
-        var intensity = Math.Clamp(visibility, 0, 1);
-        var radius = thickness switch
-        {
-            >= 0.67 => 2,
-            >= 0.01 => 1,
-            _ => 0,
-        };
+        var normalizedCamera = AspectFill(camera, targetWidth, targetHeight);
+        var normalizedHud = AspectFill(hud, targetWidth, targetHeight);
+        var normalizedVisibility = Math.Clamp(visibility, 0, 1);
+        var intensity =
+            MinimumHudIntensity +
+            normalizedVisibility *
+            (MaximumHudIntensity - MinimumHudIntensity);
+        var radius = Math.Clamp(
+            (int)Math.Round(
+                Math.Max(thickness, 0),
+                MidpointRounding.AwayFromZero),
+            0,
+            2);
         var foregroundPixels = radius == 0
-            ? hud.Pixels
-            : Thicken(hud, radius);
+            ? normalizedHud.Pixels
+            : Thicken(normalizedHud, radius);
 
-        var result = camera.Clone();
-        for (var index = 0; index < camera.Pixels.Length; index += 4)
+        var result = normalizedCamera.Clone();
+        for (var index = 0;
+             index < normalizedCamera.Pixels.Length;
+             index += 4)
         {
             for (var channel = 0; channel < 3; channel++)
             {
-                var foreground = (int)Math.Round(
-                    foregroundPixels[index + channel] * intensity);
-                var background = camera.Pixels[index + channel];
+                var foreground = Math.Clamp(
+                    (int)Math.Round(
+                        foregroundPixels[index + channel] * intensity),
+                    0,
+                    255);
+                var background = normalizedCamera.Pixels[index + channel];
                 result.Pixels[index + channel] = ScreenBlend(
                     background,
                     foreground);
@@ -44,6 +60,47 @@ public static class HudCompositor
         }
 
         return result;
+    }
+
+    private static BgraFrame AspectFill(
+        BgraFrame source,
+        int targetWidth,
+        int targetHeight)
+    {
+        if (source.Width == targetWidth && source.Height == targetHeight)
+        {
+            return source;
+        }
+
+        var scale = Math.Max(
+            targetWidth / (double)source.Width,
+            targetHeight / (double)source.Height);
+        var sourceWidth = targetWidth / scale;
+        var sourceHeight = targetHeight / scale;
+        var sourceLeft = (source.Width - sourceWidth) / 2;
+        var sourceTop = (source.Height - sourceHeight) / 2;
+        var pixels = new byte[checked(targetWidth * targetHeight * 4)];
+
+        for (var y = 0; y < targetHeight; y++)
+        {
+            var sourceY = Math.Clamp(
+                (int)Math.Floor(sourceTop + (y + 0.5) / scale),
+                0,
+                source.Height - 1);
+            for (var x = 0; x < targetWidth; x++)
+            {
+                var sourceX = Math.Clamp(
+                    (int)Math.Floor(sourceLeft + (x + 0.5) / scale),
+                    0,
+                    source.Width - 1);
+                var sourceIndex = ((sourceY * source.Width) + sourceX) * 4;
+                var targetIndex = ((y * targetWidth) + x) * 4;
+                source.Pixels.AsSpan(sourceIndex, 4)
+                    .CopyTo(pixels.AsSpan(targetIndex, 4));
+            }
+        }
+
+        return new BgraFrame(targetWidth, targetHeight, pixels);
     }
 
     private static byte[] Thicken(BgraFrame frame, int radius)

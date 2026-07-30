@@ -4,7 +4,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Shapes;
 using System.Windows.Threading;
 using RokidControl.Core.Navigation;
 
@@ -12,36 +11,21 @@ namespace RokidControl.App.Services;
 
 internal sealed class StandardNavigationOverlay : IDisposable
 {
-    private const double DeviceRingSize = 44;
-    private const double DeviceOuterInset = 3;
-    private const double DeviceOuterStroke = 7;
-    private const double DeviceInnerInset = 5;
-    private const double DeviceInnerStroke = 3;
+    private const double OverlayWidth = 330;
+    private const double OverlayHeight = 34;
     private readonly int _processId;
-    private readonly int _screenWidth;
-    private readonly int _screenHeight;
     private readonly Window _window;
-    private readonly Ellipse _outer;
-    private readonly Ellipse _inner;
+    private readonly TextBlock _text;
     private readonly DispatcherTimer _trackingTimer;
-    private LowerNavigationItem? _selectedItem;
     private bool _disposed;
 
-    public StandardNavigationOverlay(
-        int processId,
-        int screenWidth,
-        int screenHeight)
+    public StandardNavigationOverlay(int processId)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processId);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(screenWidth);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(screenHeight);
 
         _processId = processId;
-        _screenWidth = screenWidth;
-        _screenHeight = screenHeight;
-        _window = CreateWindow(out _outer, out _inner);
+        (_window, _text) = CreateWindow();
         _window.SourceInitialized += Window_SourceInitialized;
-
         _trackingTimer = new DispatcherTimer(
             TimeSpan.FromMilliseconds(100),
             DispatcherPriority.Background,
@@ -50,10 +34,12 @@ internal sealed class StandardNavigationOverlay : IDisposable
         _trackingTimer.Start();
     }
 
-    public void SetSelection(LowerNavigationItem? selectedItem)
+    public void SetApplicationMenuActive(bool active)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _selectedItem = selectedItem;
+        _text.Text = active
+            ? NavigationHintText.ApplicationMenu
+            : NavigationHintText.Normal;
         UpdatePosition();
     }
 
@@ -70,33 +56,33 @@ internal sealed class StandardNavigationOverlay : IDisposable
         _window.Close();
     }
 
-    private static Window CreateWindow(
-        out Ellipse outer,
-        out Ellipse inner)
+    private static (Window Window, TextBlock Text) CreateWindow()
     {
-        outer = new Ellipse
+        var text = new TextBlock
         {
-            Stroke = new SolidColorBrush(Color.FromArgb(166, 0, 0, 0)),
+            Text = NavigationHintText.Normal,
+            Foreground = Brushes.White,
+            FontSize = 13,
+            FontWeight = FontWeights.SemiBold,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        inner = new Ellipse
+        var content = new Border
         {
-            Stroke = new SolidColorBrush(Color.FromRgb(100, 210, 255)),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        var content = new Grid
-        {
+            Background = new SolidColorBrush(
+                Color.FromArgb(224, 13, 19, 17)),
+            BorderBrush = new SolidColorBrush(
+                Color.FromRgb(100, 210, 255)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(7),
+            Child = text,
             IsHitTestVisible = false,
         };
-        content.Children.Add(outer);
-        content.Children.Add(inner);
 
-        return new Window
+        var window = new Window
         {
-            Width = DeviceRingSize,
-            Height = DeviceRingSize,
+            Width = OverlayWidth,
+            Height = OverlayHeight,
             WindowStyle = WindowStyle.None,
             ResizeMode = ResizeMode.NoResize,
             AllowsTransparency = true,
@@ -108,6 +94,7 @@ internal sealed class StandardNavigationOverlay : IDisposable
             Content = content,
             Visibility = Visibility.Hidden,
         };
+        return (window, text);
     }
 
     private void Window_SourceInitialized(object? sender, EventArgs e)
@@ -134,7 +121,7 @@ internal sealed class StandardNavigationOverlay : IDisposable
 
     private void UpdatePosition()
     {
-        if (_disposed || _selectedItem is null)
+        if (_disposed)
         {
             _window.Hide();
             return;
@@ -162,52 +149,23 @@ internal sealed class StandardNavigationOverlay : IDisposable
             }
 
             var clientWidth = clientRect.Right - clientRect.Left;
-            var clientHeight = clientRect.Bottom - clientRect.Top;
-            if (clientWidth <= 0 || clientHeight <= 0)
+            if (clientWidth <= 0)
             {
                 _window.Hide();
                 return;
             }
 
-            var scale = Math.Min(
-                clientWidth / (double)_screenWidth,
-                clientHeight / (double)_screenHeight);
-            var displayedWidth = _screenWidth * scale;
-            var displayedHeight = _screenHeight * scale;
-            var contentLeft =
-                clientOrigin.X + (clientWidth - displayedWidth) / 2;
-            var contentTop =
-                clientOrigin.Y + (clientHeight - displayedHeight) / 2;
-            var devicePoint = _selectedItem.Value.GetHighlightPoint(
-                _screenWidth,
-                _screenHeight);
-            var centerX = contentLeft + devicePoint.X * scale;
-            var centerY = contentTop + devicePoint.Y * scale;
-            // WPF positions this overlay in device-independent pixels. Use the
-            // overlay HWND's DPI for that conversion; scrcpy can report a
-            // different DPI-awareness context from the WPF process.
             var overlayHandle =
                 new WindowInteropHelper(_window).EnsureHandle();
             var dpi = Math.Max(
                 NativeMethods.GetDpiForWindow(overlayHandle),
                 96);
             var pixelsPerDip = dpi / 96d;
-            var ringSize = DeviceRingSize * scale / pixelsPerDip;
-            var outerInset = DeviceOuterInset * scale / pixelsPerDip;
-            var innerInset = DeviceInnerInset * scale / pixelsPerDip;
-
-            _window.Width = ringSize;
-            _window.Height = ringSize;
-            _outer.Width = ringSize - 2 * outerInset;
-            _outer.Height = ringSize - 2 * outerInset;
-            _outer.StrokeThickness =
-                DeviceOuterStroke * scale / pixelsPerDip;
-            _inner.Width = ringSize - 2 * innerInset;
-            _inner.Height = ringSize - 2 * innerInset;
-            _inner.StrokeThickness =
-                DeviceInnerStroke * scale / pixelsPerDip;
-            _window.Left = centerX / pixelsPerDip - ringSize / 2d;
-            _window.Top = centerY / pixelsPerDip - ringSize / 2d;
+            _window.Left =
+                (clientOrigin.X + clientWidth / 2d) / pixelsPerDip -
+                OverlayWidth / 2d;
+            _window.Top =
+                (clientOrigin.Y + 12) / pixelsPerDip;
             if (!_window.IsVisible)
             {
                 _window.Show();

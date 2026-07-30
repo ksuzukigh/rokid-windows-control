@@ -26,7 +26,8 @@ public static class WindowsKeyCommandMapper
             0x0D => KeyboardCommand.Enter,
             0x1B => KeyboardCommand.Back,
             'H' => KeyboardCommand.Home,
-            0x20 => KeyboardCommand.CenterTap,
+            'M' => KeyboardCommand.Memo,
+            'A' => KeyboardCommand.Applications,
             _ => null,
         };
     }

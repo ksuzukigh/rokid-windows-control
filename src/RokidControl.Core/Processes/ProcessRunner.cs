@@ -63,13 +63,16 @@ public sealed class ProcessRunner
         {
             await process.WaitForExitAsync(linkedSource.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (
-            timeoutSource.IsCancellationRequested &&
-            !cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
-            timedOut = true;
             TryKillProcessTree(process);
             await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            timedOut = timeoutSource.IsCancellationRequested;
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -95,4 +98,3 @@ public sealed class ProcessRunner
         }
     }
 }
-
