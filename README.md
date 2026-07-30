@@ -126,7 +126,7 @@ Rokid以外のAndroid端末がUSB接続されている場合は、誤操作を�
 ### 自己完結型Windows x64フォルダーの作成
 
 ```powershell
-.\tools\publish.ps1 -Version 0.1.0-alpha.1
+.\tools\publish.ps1 -Version 0.1.0-alpha.2
 ```
 
 出力先は`artifacts/publish/win-x64`です。
@@ -134,7 +134,7 @@ Rokid以外のAndroid端末がUSB接続されている場合は、誤操作を�
 ### ZIPとSHA-256の作成
 
 ```powershell
-.\tools\package.ps1 -Version 0.1.0-alpha.1
+.\tools\package.ps1 -Version 0.1.0-alpha.2
 ```
 
 出力先は`artifacts/package`です。このコマンドはローカルの未署名候補を作成し、自動公開は行いません。
