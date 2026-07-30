@@ -1,10 +1,23 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$')]
-    [string]$Version = '0.1.0-alpha.1'
+    [string]$Version = '0.1.0-alpha.2'
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Assert-UnixLineEndings {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    if ($bytes.Contains([byte]13)) {
+        throw "$Path must use Unix LF line endings."
+    }
+}
+
 $numericVersionMatch = [regex]::Match($Version, '^(\d+)\.(\d+)\.(\d+)')
 $numericVersion = '{0}.{1}.{2}.0' -f `
     $numericVersionMatch.Groups[1].Value, `
@@ -21,6 +34,10 @@ else {
 if (-not (Test-Path -LiteralPath $dotnet)) {
     throw '.NET 10 SDK was not found.'
 }
+
+$watchdogSource = Join-Path $repoRoot `
+    'src\RokidControl.App\Resources\rokid_windows_wifi_watchdog.sh'
+Assert-UnixLineEndings -Path $watchdogSource
 
 $vendor = Join-Path $repoRoot 'vendor\scrcpy\scrcpy.exe'
 if (-not (Test-Path -LiteralPath $vendor)) {
@@ -66,5 +83,9 @@ foreach ($requiredFile in $requiredFiles) {
         throw "Publish output is missing $requiredFile."
     }
 }
+
+$publishedWatchdog = Join-Path $output `
+    'Resources\rokid_windows_wifi_watchdog.sh'
+Assert-UnixLineEndings -Path $publishedWatchdog
 
 Write-Host "Published self-contained Windows x64 package to $output"
