@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore RokidControl.Windows.sln --configfile NuGet.Config
+
+      - name: Build
+        run: dotnet build RokidControl.Windows.sln --configuration Release --no-restore -m:1
+
+      - name: Self-test
+        run: dotnet run --project tests/RokidControl.SelfTest/RokidControl.SelfTest.csproj --configuration Release --no-restore
+
+      - name: Windows Graphics Capture probe
+        run: dotnet run --project tools/RokidControl.CaptureProbe/RokidControl.CaptureProbe.csproj --configuration Release --no-restore
+
+      - name: Build unsigned release-candidate package
+        shell: pwsh
+        run: ./tools/package.ps1 -Version 0.0.0-ci
+
+      - name: Verify release-candidate contents
+        shell: pwsh
+        run: |
+          $archive = Get-Item artifacts/package/Rokid-Control-Windows-x64-0.0.0-ci.zip
+          $checksum = Get-Content "$($archive.FullName).sha256"
+          if ($archive.Length -le 0) {
+            throw 'Release-candidate ZIP is empty.'
+          }
+          if ($checksum -notmatch '^[0-9a-f]{64}  Rokid-Control-Windows-x64-0\.0\.0-ci\.zip$') {
+            throw 'Release-candidate checksum is invalid.'
+          }
