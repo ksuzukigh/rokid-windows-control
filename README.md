@@ -1,159 +1,189 @@
-# Rokid Control for Windows
+# Rokid Control
 
-Rokid AI Glasses RV101の画面をWindowsへ表示し、Windowsのマウスとキーボードで操作するアプリです。
+Rokid AI Glasses RV101の画面をWindowsに表示し、Windowsのマウスとキーボードで操作するアプリです。
 
-[Rokid Control for macOS](https://github.com/ksuzukigh/rokid-mac-control)を元に、Windows 11向けとして実装しました。
+**現在のバージョン: 0.1.0**
+
+[最新版をダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)
 
 ## できること
 
-- Rokidの画面をWindowsへ表示
-- マウスとキーボードによるRokid操作
-- カメラ映像へRokidの文字やアイコンを重ねる「ライブ映像」
-- ライブ映像中にRokid純正「カメラ」を開くと、フルカラーの撮影画面へ自動切替
-- カメラを使わない「背景なし（省電力）」
-- USBと暗号化Wi-Fiの両方で接続
-- Wi-Fi切断、カメラ競合、画面受信停止からの自動復帰
-- 他のWindowsアプリを操作している間はRokidへキーを送らない入力隔離
+- Rokidの画面をWindowsに表示する
+- WindowsのマウスとキーボードでRokidを操作する
+- 「ライブ映像」と「背景なし（省電力）」を選べる
+- USBとWi-Fiの両方で接続できる
+- Wi-Fi切断やカメラ使用後に自動でつなぎ直す
 
-Rokidの画面とカメラ映像はPC内だけで処理し、クラウドへ送信しません。
+### ライブ映像
 
-## 現在の公開状態
+Rokidのカメラ映像を背景にして、Rokidの文字やアイコンを重ねて表示します。
 
-Windows版の実装、実機確認、仕様の見直しは完了しています。アプリ一式とソースコードをApache License 2.0で公開しています。
+Rokid純正の「カメラ」を開くと、Windowsの表示もフルカラーの撮影画面へ自動で切り替わります。カメラを閉じると、元のライブ映像へ自動で戻ります。
 
-### ダウンロードと起動
+### 背景なし（省電力）
 
-1. [最新版のRokid Control for Windowsをダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)します。
-2. ダウンロードした`Rokid-Control-Windows-x64-<version>.zip`を展開します。
-3. 展開したフォルダー内の`Rokid Control.exe`を開きます。
+カメラを使わず、黒い背景にRokidの文字やアイコンを表示します。電池を節約したいときに使います。
 
-配布ZIPにはアプリの実行に必要なファイルがすべて入っています。インストールや管理者権限は不要です。
+純正「カメラ」を開いている間だけ、Windowsの表示がフルカラーの撮影画面へ切り替わります。カメラを閉じると、背景なし画面へ戻ります。
+
+## 用意するもの
+
+- **Rokid AI Glasses RV101**
+- **Windows 11 24H2以降のx64 PC**
+- **Rokidの開発用5ピンケーブル**
+  RV101付属の3ピンケーブルは充電専用です。Windowsとの初回接続には使えません。開発用ケーブルはRokidの販売元またはサポートへ確認してください。
+- **Windows PCとRokidを接続するWi-Fi**
+- **Rokidのスマホアプリ側で開発者モード（ADB）を有効にしておくこと**
+  開発用5ピンケーブルをつなぐだけではADBは有効になりません。最初の接続前に有効にしてください。
+
+Rokidを再起動したあともケーブルなしで接続したい場合は、別公開の[Wi-Fi ON](https://github.com/ksuzukigh/rokid-wifi-on)もRokidへ入れておきます。
+
+## Windowsに入れる
+
+### 1. Rokid Controlをダウンロードする
+
+[最新版のRokid Control for Windowsをダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)します。
+
+リリースページにある`Rokid-Control-Windows-x64-<version>.zip`をダウンロードします。
+
+### 2. ZIPを展開する
+
+ダウンロードしたZIPを右クリックし、「すべて展開」を選びます。展開したフォルダーは、好きな場所へ置いてかまいません。
+
+### 3. アプリを開く
+
+展開したフォルダー内の`Rokid Control.exe`をダブルクリックします。インストールや管理者権限は必要ありません。
 
 <details>
 <summary>Windowsに確認画面が表示された場合</summary>
 
-ダウンロードしたファイルの実行前にWindowsが確認画面を表示することがあります。ファイル名が`Rokid Control.exe`であり、このREADMEからGitHub Releasesへ進んでダウンロードしたファイルであることを確認してから、画面の案内に従ってください。
+ダウンロードしたアプリの実行前に、Windowsが確認画面を表示することがあります。ファイル名が`Rokid Control.exe`であり、このREADMEからGitHub Releasesへ進んでダウンロードしたファイルであることを確認してから、画面の案内に従ってください。
 
 Windowsのセキュリティ設定によって実行が許可されない場合は、そのPCでは利用できません。保護機能を無効にする必要はありません。
 
 </details>
 
-## 配布方針
+## Rokidと初めて接続する
 
-公開版はGitHub Actionsで`main`の公開ソースから作成し、ZIPとSHA-256をGitHub Releasesへ掲載します。コード署名は将来必要になった場合にあらためて検討します。
-
-- Privacy policy: [PRIVACY.md](PRIVACY.md)
-- Detailed policy: [Distribution](docs/CODE-SIGNING.md)
-
-## 対応環境
-
-- Rokid AI Glasses RV101
-- Windows 11 24H2以降
-- x64 PC
-- Rokidの開発用5ピンケーブル（初回準備用）
-- Windows PCとRokidを接続するWi-Fi
-- スマートフォンのRokidアプリで開発者モード（ADB）を有効にしていること
-
-RV101付属の3ピンケーブルは充電用です。Windowsとの初回接続には開発用5ピンケーブルが必要です。
-
-## 初めて接続する
-
-1. スマートフォンのRokidアプリで、Rokidの開発者モード（ADB）を有効にします。
-2. Windows PCとRokidを同じWi-Fiへ接続します。
-3. Rokidを開発用5ピンケーブルでWindows PCへつなぎます。
+1. スマートフォンのRokidアプリで、開発者モード（ADB）を有効にします。
+2. Windows PCとRokidを同じWi-Fiへつなぎます。
+3. Rokidの電源を入れ、開発用5ピンケーブルでWindows PCとつなぎます。
 4. `Rokid Control.exe`を開きます。
-5. RokidにUSB接続の確認が表示された場合は許可します。
+5. Rokid側にUSB接続の確認が表示された場合は許可します。
 6. 「ライブ映像」または「背景なし（省電力）」を選びます。
-7. Rokidの画面がWindowsへ表示されたら、5ピンケーブルを外せます。
+7. WindowsにRokidの画面が表示されたら接続完了です。5ピンケーブルは外せます。
 
-初回USB認証後、Rokid ControlはAndroid標準のTLSで暗号化された無線接続を準備します。接続先にはADBが通知する動的なポートを使用し、旧方式の固定5555番ポートは使用しません。
+接続には少し時間がかかることがあります。待つのをやめる場合は「キャンセル」を押します。
 
 ## 普段の使い方
 
-1. Windows PCとRokidを同じWi-Fiへ接続します。
+1. Windows PCとRokidを同じWi-Fiへつなぎます。
 2. `Rokid Control.exe`を開きます。
-3. 表示方法を選びます。
+3. 「ライブ映像」または「背景なし（省電力）」を選びます。
 4. 表示されたRokid画面を一度クリックしてから操作します。
 
-初回設定後は、普段の接続に5ピンケーブルは必要ありません。
+初回設定後は、普段の接続に開発用5ピンケーブルは必要ありません。Wi-Fiが一時的に切れた場合は自動でつなぎ直します。
 
-Rokidの再起動や省電力動作でWi-Fiが切れた場合は、Rokidで[Wi-Fi ON](https://github.com/ksuzukigh/rokid-wifi-on)を開いてからRokid Controlを起動します。Wi-Fi ONを使用していない場合は、もう一度5ピンケーブルを接続すれば安全な無線接続を再準備できます。
+ライブ映像はRokidのカメラを使うため、「背景なし（省電力）」より電池を消費します。表示方法を変える場合は、Rokid Controlを一度終了して開き直します。
+
+## Rokidを再起動したあと
+
+1. Rokidのアプリ一覧から「Wi-Fi ON」を開きます。
+2. 「Wi-Fiに接続しました」と表示されるまで待ちます。
+3. Windowsで`Rokid Control.exe`を開きます。
+
+接続できない場合は、開発用5ピンケーブルでWindows PCとRokidをつないでから`Rokid Control.exe`を開きます。
 
 ## キーボード操作
+
+Windowsに表示されたRokidの画面を一度クリックしてから操作します。ほかのアプリを操作している間は、そのアプリへキーが入力されます。
 
 | キー | 動作 |
 | --- | --- |
 | `M` | メモを開く |
 | `H` | Homeを開く |
-| `A` | アプリ一覧を開き、アプリ選択を開始 |
-| `←` / `→` | `A`を押した後にアプリを選択 |
-| `Enter` | 選択中のアプリを開く |
-| `Esc` | 一つ前へ戻る |
+| `A` | アプリ一覧を開く |
+| `Esc` | 一つ前に戻る |
+| `←` / `→` | `A`を押したあと、アプリを選ぶ |
+| `Enter` | `A`を押したあと、選んだアプリを開く |
 | `Ctrl` + `Q` | Rokid Controlを終了 |
-| `Alt` + `F4` | Rokid Controlを終了 |
 
-通常時の矢印キーとEnterはRokidへ送りません。`A`でアプリ一覧を開いた後だけ使用します。アプリを開いて`Esc`で一覧へ戻った場合も、`←` / `→`と`Enter`をそのまま使用できます。別アプリからRokid画面へ戻るためのクリックでは選択状態を維持し、`H`、`M`、またはライブ映像の直接操作で終了します。
+`M`・`H`・`A`は、Rokidがどの画面を表示していても、1回押すだけでその項目を開きます。
 
-## 接続できないとき
+`A`でアプリ一覧を開くと、左右キーと`Enter`が使えるようになります。アプリを開いて`Esc`で一覧へ戻ったあとも、そのまま左右キーで選び直せます。`H`、`M`、またはライブ映像を直接操作すると、アプリ選びを終えます。
+
+## うまく接続できないとき
 
 1. Windows PCとRokidが同じWi-Fiにつながっているか確認します。
-2. Rokidで「Wi-Fi ON」を開き、Wi-Fi接続が完了するまで待ちます。
-3. Rokid Controlを終了して開き直します。
-4. 改善しない場合は、開発用5ピンケーブルを接続します。
-5. RokidにUSB接続の確認が表示された場合は許可します。
+2. Rokidで「Wi-Fi ON」を開き、「Wi-Fiに接続しました」と表示されるまで待ちます。
+3. `Rokid Control.exe`を一度終了して開き直します。
+4. それでも接続できない場合は、開発用5ピンケーブルでWindows PCとRokidをつなぎます。
+5. Rokid側にUSB接続の確認が表示された場合は許可します。
 
 Rokid以外のAndroid端末がUSB接続されている場合は、誤操作を避けるため外してください。
 
-## プライバシーと安全性
+<details>
+<summary>キーが動かない場合</summary>
 
-- 映像、キーボード入力、マウス操作をクラウドへ送信しません。
-- アクセス解析、広告、クラウド同期、自動更新確認を含みません。
-- 接続後にRokidの機種またはメーカーを確認し、Rokid以外の機器を拒否します。
-- 無線ADBには、初回USB認証で登録されたPCだけが接続できるTLS方式を使用します。
-- TLSで接続していても、端末に別の暗号化されていないADB入口が残っていれば接続を採用しません。USB接続時はその入口を閉じ、閉じたことを確認できない場合は安全のため起動を中止します。
-- 公共Wi-Fiでの使用は推奨しません。自宅など信頼できるWi-Fiで使用してください。
+1. Windowsに表示されたRokidの画面を一度クリックします。
+2. 左右キーと`Enter`は、`A`でアプリ一覧を開いてから使えます。
+3. ほかのWindowsアプリを選んでいる場合は、Rokidの画面をもう一度クリックします。
 
-保存情報と削除方法は[プライバシー方針](PRIVACY.md)を参照してください。
+</details>
 
-## 開発者向け
+<details>
+<summary>ライブ映像が表示されない場合</summary>
 
-### 必要なもの
+1. Rokid純正「カメラ」など、カメラを使うアプリを終了します。
+2. 数秒待って、ライブ映像へ戻るか確認します。
+3. 改善しない場合は、「背景なし（省電力）」を選びます。
 
-- .NET 10 SDK
-- 公式scrcpy 4.1 Windows x64版
+</details>
 
-### 検証
+## 終了する
 
-```powershell
-.\tools\verify.ps1
-```
+Rokid Controlのウインドウ右上にある「×」を押します。`Alt` + `F4`または`Ctrl` + `Q`でも終了できます。
 
-### 依存ファイルの準備
+## 削除するには
 
-```powershell
-.\tools\prepare-vendor.ps1
-```
+1. Rokid Controlを終了します。
+2. 展開したRokid Controlのフォルダーを削除します。
+3. 保存済みの接続先や設定、ログも削除したい場合は、`%LOCALAPPDATA%\Rokid Control`フォルダーを削除します。
 
-### 自己完結型Windows x64フォルダーの作成
+## 安全性について
 
-```powershell
-.\tools\publish.ps1 -Version 0.1.0-alpha.2
-```
+- Rokidの画面、ライブ映像、操作データは、Windows PCとRokidの間で直接送受信します。
+- 画面、映像、操作データをクラウドへ送りません。
+- ほかのアプリで入力した文字は記録せず、Rokidへも送りません。
+- 無線接続には、初回USB認証で登録したPCだけが接続できる暗号化方式を使います。
 
-出力先は`artifacts/publish/win-x64`です。
+自宅など、信頼できるWi-Fiでお使いください。
 
-### ZIPとSHA-256の作成
+## 注意
 
-```powershell
-.\tools\package.ps1 -Version 0.1.0-alpha.2
-```
+- Rokid AI Glasses RV101用です。
+- ライブ映像はRokidのカメラを継続して使うため、電池を多く消費します。
+- 公共のWi-Fiでは使用しないでください。
 
-出力先は`artifacts/package`です。このコマンドはローカルの未署名候補を作成し、自動公開は行いません。
+## 関連アプリ
 
-詳しい動作は[仕様書](docs/SPECIFICATION.md)、検証結果は[技術試験計画](docs/TECHNICAL-TEST-PLAN.md)、署名方針は[コード署名と配布](docs/CODE-SIGNING.md)を参照してください。
+- [Wi-Fi ON](https://github.com/ksuzukigh/rokid-wifi-on)：Rokid AI Glasses RV101のWi-Fiを復旧します。
 
 ## ライセンス
 
-Rokid Control for Windowsのソースコードは[Apache License 2.0](LICENSE)です。
+本アプリのソースコードは[Apache License 2.0](LICENSE)で公開しています。同梱しているscrcpyとAndroid Platform Toolsなどのライセンスは、アプリ内の`Licenses`フォルダーに収録しています。
 
-配布物に含まれるscrcpy、Android Platform Tools、FFmpeg、SDLなどのライセンスと通知は、公式配布物の内容を保持して同梱します。詳細は[Third-party notices](THIRD-PARTY-NOTICES.md)を参照してください。
+<details>
+<summary>開発者向けの詳しい情報</summary>
+
+Windows版は.NET 10 SDKで作成しています。開発用のビルド、検証、パッケージ作成の手順は次のとおりです。
+
+```powershell
+.\tools\verify.ps1
+.\tools\prepare-vendor.ps1
+.\tools\package.ps1 -Version 0.1.0
+```
+
+仕様は[仕様書](docs/SPECIFICATION.md)、検証結果は[技術試験計画](docs/TECHNICAL-TEST-PLAN.md)、配布方針は[配布方針](docs/CODE-SIGNING.md)を参照してください。
+
+</details>
