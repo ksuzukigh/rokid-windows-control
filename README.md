@@ -2,6 +2,8 @@
 
 Rokid AI Glasses RV101の画面をWindowsに表示し、Windowsのマウスとキーボードで操作するアプリです。
 
+![WindowsからRokid AI Glassesを操作するイメージ](docs/images/mac-control-overview.png)
+
 **現在のバージョン: 0.1.0**
 
 [最新版をダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)
@@ -20,11 +22,15 @@ Rokidのカメラ映像を背景にして、Rokidの文字やアイコンを重�
 
 Rokid純正の「カメラ」を開くと、Windowsの表示もフルカラーの撮影画面へ自動で切り替わります。カメラを閉じると、元のライブ映像へ自動で戻ります。
 
+![ライブ映像を背景にしてRokidの文字やアイコンを表示した例](docs/images/rokid-control-live-view.png)
+
 ### 背景なし（省電力）
 
 カメラを使わず、黒い背景にRokidの文字やアイコンを表示します。電池を節約したいときに使います。
 
 純正「カメラ」を開いている間だけ、Windowsの表示がフルカラーの撮影画面へ切り替わります。カメラを閉じると、背景なし画面へ戻ります。
+
+![背景なし（省電力）でRokidの文字やアイコンを表示した例](docs/images/rokid-control-connected.png)
 
 ## 用意するもの
 
