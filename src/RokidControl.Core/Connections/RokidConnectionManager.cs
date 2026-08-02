@@ -12,6 +12,11 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         "/data/local/tmp/rokid_windows_wifi_watchdog.pid";
     private static readonly TimeSpan SecureWifiHandoffDuration =
         TimeSpan.FromSeconds(15);
+    private static readonly string[] PlaintextPortProperties =
+    [
+        "service.adb.tcp.port",
+        "persist.adb.tcp.port",
+    ];
 
     private readonly IAdbClient _adb;
     private readonly string _addressFile;
@@ -21,6 +26,7 @@ public sealed class RokidConnectionManager : IAsyncDisposable
     private CancellationTokenSource? _heartbeatCancellation;
     private Task? _heartbeatTask;
     private string _serial = string.Empty;
+    private bool _sawPlaintextListener;
 
     public RokidConnectionManager(
         IAdbClient adb,
@@ -61,6 +67,7 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         TimeSpan? searchDuration = null,
         CancellationToken cancellationToken = default)
     {
+        _sawPlaintextListener = false;
         progress?.Report("Rokidを探しています…");
 
         var usb = await FindUsbRokidAsync(cancellationToken).ConfigureAwait(false);
@@ -85,7 +92,9 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         if (saved is not null && await ConnectAsync(saved, cancellationToken).ConfigureAwait(false))
         {
             progress?.Report("Rokidに接続しています…");
-            if (await IsRokidDeviceAsync(saved, cancellationToken).ConfigureAwait(false))
+            if (await IsRokidDeviceAsync(saved, cancellationToken).ConfigureAwait(false) &&
+                await IsSecureNetworkConnectionAsync(saved, cancellationToken)
+                    .ConfigureAwait(false))
             {
                 return await UseSerialAsync(saved, saveAddress: true).ConfigureAwait(false);
             }
@@ -141,12 +150,16 @@ public sealed class RokidConnectionManager : IAsyncDisposable
                 .ConfigureAwait(false);
         }
 
-        throw new RokidConnectionException(RokidConnectionError.NoDevice);
+        throw new RokidConnectionException(
+            _sawPlaintextListener
+                ? RokidConnectionError.PlaintextListenerRemains
+                : RokidConnectionError.NoDevice);
     }
 
     public async Task<string?> ReconnectAsync(
         CancellationToken cancellationToken = default)
     {
+        _sawPlaintextListener = false;
         var previous = await GetCurrentSerialAsync().ConfigureAwait(false);
         var saved = await ReadSavedAddressAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -204,6 +217,10 @@ public sealed class RokidConnectionManager : IAsyncDisposable
                 }
 
                 if (await IsRokidDeviceAsync(candidate, cancellationToken)
+                        .ConfigureAwait(false) &&
+                    await IsSecureNetworkConnectionAsync(
+                            candidate,
+                            cancellationToken)
                         .ConfigureAwait(false))
                 {
                     return await UseSerialAsync(candidate, saveAddress: true)
@@ -250,6 +267,12 @@ public sealed class RokidConnectionManager : IAsyncDisposable
 
             await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken)
                 .ConfigureAwait(false);
+        }
+
+        if (_sawPlaintextListener)
+        {
+            throw new RokidConnectionException(
+                RokidConnectionError.PlaintextListenerRemains);
         }
 
         return null;
@@ -302,6 +325,21 @@ public sealed class RokidConnectionManager : IAsyncDisposable
             ],
             TimeSpan.FromSeconds(3),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<bool?> IsOriginalCameraForegroundAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var serial = await RequireCurrentSerialAsync().ConfigureAwait(false);
+        var result = await _adb.RunAsync(
+            [
+                "-s", serial, "shell", "dumpsys", "activity", "activities",
+            ],
+            TimeSpan.FromSeconds(3),
+            cancellationToken).ConfigureAwait(false);
+        return result.Succeeded
+            ? CameraAppPolicy.IsOriginalCameraForeground(result.Output)
+            : null;
     }
 
     public async Task<bool> IsLauncherActiveAsync(
@@ -479,6 +517,10 @@ public sealed class RokidConnectionManager : IAsyncDisposable
             }
 
             if (await IsRokidDeviceAsync(device.Serial, cancellationToken)
+                    .ConfigureAwait(false) &&
+                await IsSecureNetworkConnectionAsync(
+                        device.Serial,
+                        cancellationToken)
                     .ConfigureAwait(false))
             {
                 return device.Serial;
@@ -510,6 +552,32 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            var usbTlsAddress = await GetSecureWifiAddressFromUsbAsync(
+                usbSerial,
+                cancellationToken).ConfigureAwait(false);
+            if (usbTlsAddress is not null &&
+                await ConnectAsync(usbTlsAddress, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                if (await IsRokidDeviceAsync(usbTlsAddress, cancellationToken)
+                        .ConfigureAwait(false) &&
+                    await IsSecureNetworkConnectionAsync(
+                            usbTlsAddress,
+                            cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    progress?.Report("無線接続に切り替えています…");
+                    return await UseSerialAsync(
+                        usbTlsAddress,
+                        saveAddress: true).ConfigureAwait(false);
+                }
+
+                await RejectWifiDeviceAsync(
+                    usbTlsAddress,
+                    removeSavedAddress: false,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             var connectedWifi = await FindConnectedWifiRokidAsync(cancellationToken)
                 .ConfigureAwait(false);
             if (connectedWifi is not null)
@@ -539,6 +607,14 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         string usbSerial,
         CancellationToken cancellationToken)
     {
+        if (!await ClosePlaintextListenersAsync(
+                usbSerial,
+                cancellationToken).ConfigureAwait(false))
+        {
+            throw new RokidConnectionException(
+                RokidConnectionError.SafetyUnverified);
+        }
+
         _ = await _adb.RunAsync(
             [
                 "-s", usbSerial, "shell", "am", "broadcast",
@@ -608,6 +684,8 @@ public sealed class RokidConnectionManager : IAsyncDisposable
             }
 
             if (await IsRokidDeviceAsync(address, cancellationToken)
+                    .ConfigureAwait(false) &&
+                await IsSecureNetworkConnectionAsync(address, cancellationToken)
                     .ConfigureAwait(false))
             {
                 return await UseSerialAsync(address, saveAddress: true)
@@ -621,6 +699,138 @@ public sealed class RokidConnectionManager : IAsyncDisposable
         }
 
         return null;
+    }
+
+    private async Task<string?> GetSecureWifiAddressFromUsbAsync(
+        string usbSerial,
+        CancellationToken cancellationToken)
+    {
+        var port = await _adb.RunAsync(
+            [
+                "-s", usbSerial, "shell", "getprop", "service.adb.tls.port",
+            ],
+            TimeSpan.FromSeconds(3),
+            cancellationToken).ConfigureAwait(false);
+        if (!port.Succeeded)
+        {
+            return null;
+        }
+
+        var address = await _adb.RunAsync(
+            [
+                "-s", usbSerial, "shell", "ip", "-4", "-o", "addr",
+                "show", "wlan0",
+            ],
+            TimeSpan.FromSeconds(3),
+            cancellationToken).ConfigureAwait(false);
+        return address.Succeeded
+            ? ConnectionEncryption.BuildUsbTlsAddress(
+                address.Output,
+                port.Output)
+            : null;
+    }
+
+    private async Task<bool> ClosePlaintextListenersAsync(
+        string usbSerial,
+        CancellationToken cancellationToken)
+    {
+        var openPorts = await ReadPlaintextListenerPortsAsync(
+            usbSerial,
+            cancellationToken).ConfigureAwait(false);
+        if (openPorts is null)
+        {
+            return false;
+        }
+
+        if (openPorts.Count == 0)
+        {
+            return true;
+        }
+
+        _sawPlaintextListener = true;
+        _ = await _adb.RunAsync(
+            ["-s", usbSerial, "usb"],
+            TimeSpan.FromSeconds(8),
+            cancellationToken).ConfigureAwait(false);
+        await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken)
+            .ConfigureAwait(false);
+        _ = await _adb.RunAsync(
+            ["-s", usbSerial, "wait-for-device"],
+            TimeSpan.FromSeconds(20),
+            cancellationToken).ConfigureAwait(false);
+        foreach (var property in PlaintextPortProperties)
+        {
+            _ = await _adb.RunAsync(
+                ["-s", usbSerial, "shell", "setprop", property, "-1"],
+                TimeSpan.FromSeconds(5),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var remaining = await ReadPlaintextListenerPortsAsync(
+            usbSerial,
+            cancellationToken).ConfigureAwait(false);
+        return remaining is not null && remaining.Count == 0;
+    }
+
+    private async Task<IReadOnlyList<string>?> ReadPlaintextListenerPortsAsync(
+        string serial,
+        CancellationToken cancellationToken)
+    {
+        var values = new List<string>();
+        foreach (var property in PlaintextPortProperties)
+        {
+            var result = await _adb.RunAsync(
+                ["-s", serial, "shell", "getprop", property],
+                TimeSpan.FromSeconds(3),
+                cancellationToken).ConfigureAwait(false);
+            if (!result.Succeeded)
+            {
+                return null;
+            }
+
+            values.AddRange(result.Output.Split(
+                ['\r', '\n'],
+                StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        return ConnectionEncryption.ActiveListenerPorts(values);
+    }
+
+    private async Task<bool> IsSecureNetworkConnectionAsync(
+        string address,
+        CancellationToken cancellationToken)
+    {
+        var plaintextPorts = await ReadPlaintextListenerPortsAsync(
+            address,
+            cancellationToken).ConfigureAwait(false);
+        if (plaintextPorts is null)
+        {
+            return false;
+        }
+
+        var wireless = await _adb.RunAsync(
+            [
+                "-s", address, "shell", "settings", "get", "global",
+                "adb_wifi_enabled",
+            ],
+            TimeSpan.FromSeconds(3),
+            cancellationToken).ConfigureAwait(false);
+        if (!wireless.Succeeded)
+        {
+            return false;
+        }
+
+        var wirelessEnabled = wireless.Output.Split(
+                ['\r', '\n'],
+                StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => value.Trim())
+            .Contains("1", StringComparer.Ordinal);
+        var result = ConnectionEncryption.Inspect(
+            address,
+            plaintextPorts,
+            wirelessEnabled);
+        _sawPlaintextListener |= result.IsPlaintextListenerProblem;
+        return result.IsEncrypted;
     }
 
     private static bool IsLegacyFixedPortAddress(string address) =>

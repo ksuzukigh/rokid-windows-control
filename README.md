@@ -9,6 +9,7 @@ Rokid AI Glasses RV101の画面をWindowsへ表示し、Windowsのマウスと�
 - Rokidの画面をWindowsへ表示
 - マウスとキーボードによるRokid操作
 - カメラ映像へRokidの文字やアイコンを重ねる「ライブ映像」
+- ライブ映像中にRokid純正「カメラ」を開くと、フルカラーの撮影画面へ自動切替
 - カメラを使わない「背景なし（省電力）」
 - USBと暗号化Wi-Fiの両方で接続
 - Wi-Fi切断、カメラ競合、画面受信停止からの自動復帰
@@ -18,22 +19,31 @@ Rokidの画面とカメラ映像はPC内だけで処理し、クラウドへ送�
 
 ## 現在の公開状態
 
-Windows版の実装、実機確認、仕様の見直しは完了しています。ソースコードはApache License 2.0で公開しています。
+Windows版の実装、実機確認、仕様の見直しは完了しています。アプリ一式とソースコードをApache License 2.0で公開しています。
 
-一般利用者向けの配布ZIPには、Smart App Controlが有効なWindows 11でも信頼されるコード署名を付ける予定です。署名済み配布版の準備が完了するまでは、Windowsの保護機能を無効にして未署名版を実行するよう案内しません。
+### ダウンロードと起動
 
-SignPath Foundationへの申請では、完成版と同じ配布形式を示すため、[GitHub Releases](https://github.com/ksuzukigh/rokid-windows-control/releases)に未署名プレリリースを掲載します。これは署名審査用であり、一般利用者向けの配布版ではありません。
+1. [最新版のRokid Control for Windowsをダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)します。
+2. ダウンロードした`Rokid-Control-Windows-x64-<version>.zip`を展開します。
+3. 展開したフォルダー内の`Rokid Control.exe`を開きます。
 
-## Code signing policy
+配布ZIPにはアプリの実行に必要なファイルがすべて入っています。インストールや管理者権限は不要です。
 
-一般公開版は、GitHub Actionsで`main`の公開ソースから生成した自作の実行ファイルとDLLだけを署名対象にします。署名要求はリリースごとに手動承認し、秘密鍵はリポジトリや開発PCへ保存しません。
+<details>
+<summary>Windowsに確認画面が表示された場合</summary>
 
-Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+ダウンロードしたファイルの実行前にWindowsが確認画面を表示することがあります。ファイル名が`Rokid Control.exe`であり、このREADMEからGitHub Releasesへ進んでダウンロードしたファイルであることを確認してから、画面の案内に従ってください。
 
-- Committers and reviewers: [ksuzukigh](https://github.com/ksuzukigh)
-- Approvers: [ksuzukigh](https://github.com/ksuzukigh)
+Windowsのセキュリティ設定によって実行が許可されない場合は、そのPCでは利用できません。保護機能を無効にする必要はありません。
+
+</details>
+
+## 配布方針
+
+公開版はGitHub Actionsで`main`の公開ソースから作成し、ZIPとSHA-256をGitHub Releasesへ掲載します。コード署名は将来必要になった場合にあらためて検討します。
+
 - Privacy policy: [PRIVACY.md](PRIVACY.md)
-- Detailed policy: [Code signing and distribution](docs/CODE-SIGNING.md)
+- Detailed policy: [Distribution](docs/CODE-SIGNING.md)
 
 ## 対応環境
 
@@ -82,7 +92,7 @@ Rokidの再起動や省電力動作でWi-Fiが切れた場合は、Rokidで[Wi-F
 | `Ctrl` + `Q` | Rokid Controlを終了 |
 | `Alt` + `F4` | Rokid Controlを終了 |
 
-通常時の矢印キーとEnterはRokidへ送りません。`A`でアプリ一覧を開いた後だけ使用します。
+通常時の矢印キーとEnterはRokidへ送りません。`A`でアプリ一覧を開いた後だけ使用します。アプリを開いて`Esc`で一覧へ戻った場合も、`←` / `→`と`Enter`をそのまま使用できます。別アプリからRokid画面へ戻るためのクリックでは選択状態を維持し、`H`、`M`、またはライブ映像の直接操作で終了します。
 
 ## 接続できないとき
 
@@ -100,6 +110,7 @@ Rokid以外のAndroid端末がUSB接続されている場合は、誤操作を�
 - アクセス解析、広告、クラウド同期、自動更新確認を含みません。
 - 接続後にRokidの機種またはメーカーを確認し、Rokid以外の機器を拒否します。
 - 無線ADBには、初回USB認証で登録されたPCだけが接続できるTLS方式を使用します。
+- TLSで接続していても、端末に別の暗号化されていないADB入口が残っていれば接続を採用しません。USB接続時はその入口を閉じ、閉じたことを確認できない場合は安全のため起動を中止します。
 - 公共Wi-Fiでの使用は推奨しません。自宅など信頼できるWi-Fiで使用してください。
 
 保存情報と削除方法は[プライバシー方針](PRIVACY.md)を参照してください。

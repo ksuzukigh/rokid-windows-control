@@ -1,12 +1,12 @@
-name: Unsigned prerelease
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Prerelease version without the v prefix
+        description: Release version without the v prefix
         required: true
-        default: 0.1.0-alpha.2
+        default: 0.1.0
         type: string
 
 permissions:
@@ -31,10 +31,7 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
-            throw 'Version must be a valid prerelease version without a v prefix.'
-          }
-          if ($env:RELEASE_VERSION -notmatch '-') {
-            throw 'This workflow only publishes prerelease versions.'
+            throw 'Version must be a valid version without a v prefix.'
           }
 
       - name: Restore
@@ -49,7 +46,7 @@ jobs:
       - name: Windows Graphics Capture probe
         run: dotnet run --project tools/RokidControl.CaptureProbe/RokidControl.CaptureProbe.csproj --configuration Release --no-restore
 
-      - name: Build unsigned package
+      - name: Build package
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ inputs.version }}
@@ -66,10 +63,10 @@ jobs:
           $checksumPath = "$($archive.FullName).sha256"
           $checksum = Get-Content -LiteralPath $checksumPath
           if ($archive.Length -le 0) {
-            throw 'Prerelease ZIP is empty.'
+            throw 'Release ZIP is empty.'
           }
           if ($checksum -notmatch "^[0-9a-f]{64}  $([regex]::Escape($archiveName))$") {
-            throw 'Prerelease checksum is invalid.'
+            throw 'Release checksum is invalid.'
           }
 
           $expectedProduct = 'Rokid Control for Windows'
@@ -102,7 +99,7 @@ jobs:
             }
           }
 
-      - name: Publish unsigned GitHub prerelease
+      - name: Publish GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -113,29 +110,24 @@ jobs:
           $archive = "artifacts/package/Rokid-Control-Windows-x64-$version.zip"
           $checksum = "$archive.sha256"
           $notes = @"
-          ## Unsigned SignPath application candidate
+          ## Rokid Control for Windows $version
 
-          This prerelease is unsigned and exists to demonstrate the final distribution format for the SignPath Foundation application.
+          Rokid AI Glasses RV101の画面をWindowsへ表示し、マウスとキーボードで操作できるアプリです。
 
-          Windows may block this package. Do not disable Smart App Control, Microsoft Defender, or other Windows protections. General users should wait for a signed release.
+          ## 使い方
 
-          ## What it contains
+          1. ZIPを展開します。
+          2. 展開したフォルダー内の`Rokid Control.exe`を開きます。
+          3. 初回接続の手順は[README](https://github.com/${{ github.repository }}#readme)を参照してください。
 
-          - Display and control a Rokid AI Glasses RV101 from Windows 11
-          - Live camera/HUD and camera-free power-saving display modes
-          - Initial USB authorization followed by encrypted Android TLS wireless ADB
+          ZIPと同名の`.sha256`ファイルでダウンロード内容を確認できます。
 
-          See the [README](https://github.com/${{ github.repository }}#readme) for requirements, usage, privacy, and Apache License 2.0 source licensing.
+          ## ライセンスとプライバシー
 
-          ## Code signing policy
-
-          Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
-
-          See the project's [Code signing policy](https://github.com/${{ github.repository }}/blob/main/docs/CODE-SIGNING.md).
+          ソースコードはApache License 2.0です。映像や操作内容をクラウドへ送信しません。詳しくは[README](https://github.com/${{ github.repository }}#readme)と[プライバシー方針](https://github.com/${{ github.repository }}/blob/main/PRIVACY.md)を参照してください。
           "@
           gh release create $tag $archive $checksum `
             --repo '${{ github.repository }}' `
             --target '${{ github.sha }}' `
-            --title "Rokid Control for Windows $version (unsigned)" `
-            --notes $notes `
-            --prerelease
+            --title "Rokid Control for Windows $version" `
+            --notes $notes

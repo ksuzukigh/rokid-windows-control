@@ -62,6 +62,17 @@ public static class HudCompositor
         return result;
     }
 
+    public static BgraFrame ShowDeviceScreen(
+        BgraFrame screen,
+        int outputWidth,
+        int outputHeight)
+    {
+        ArgumentNullException.ThrowIfNull(screen);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(outputWidth);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(outputHeight);
+        return AspectFill(screen, outputWidth, outputHeight).Clone();
+    }
+
     private static BgraFrame AspectFill(
         BgraFrame source,
         int targetWidth,

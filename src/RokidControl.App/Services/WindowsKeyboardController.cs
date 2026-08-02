@@ -8,14 +8,13 @@ namespace RokidControl.App.Services;
 
 internal sealed class WindowsKeyboardController : IDisposable
 {
+    private static readonly KeyboardShortcutDebouncer DirectShortcutDebouncer =
+        new(TimeSpan.FromMilliseconds(750));
     private const int WhKeyboardLl = 13;
-    private const int WhMouseLl = 14;
     private const int WmKeyDown = 0x0100;
     private const int WmKeyUp = 0x0101;
     private const int WmSysKeyDown = 0x0104;
     private const int WmSysKeyUp = 0x0105;
-    private const int WmLeftButtonDown = 0x0201;
-    private const int WmRightButtonDown = 0x0204;
     private const int VkControl = 0x11;
     private const int VkMenu = 0x12;
 
@@ -29,10 +28,8 @@ internal sealed class WindowsKeyboardController : IDisposable
     private readonly HashSet<uint> _heldKeys = [];
     private readonly HashSet<uint> _swallowedKeys = [];
     private readonly NativeMethods.HookProcedure _keyboardProcedure;
-    private readonly NativeMethods.HookProcedure _mouseProcedure;
     private readonly Task _actionTask;
     private IntPtr _keyboardHook;
-    private IntPtr _mouseHook;
     private int _targetProcessId;
     private bool _disposed;
 
@@ -52,7 +49,6 @@ internal sealed class WindowsKeyboardController : IDisposable
         _commandProcessor.ApplicationMenuModeChanged +=
             CommandProcessor_ApplicationMenuModeChanged;
         _keyboardProcedure = KeyboardHook;
-        _mouseProcedure = MouseHook;
         _actionTask = ProcessActionsAsync(_cancellation.Token);
     }
 
@@ -64,7 +60,7 @@ internal sealed class WindowsKeyboardController : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(targetProcessId);
-        if (_keyboardHook != IntPtr.Zero || _mouseHook != IntPtr.Zero)
+        if (_keyboardHook != IntPtr.Zero)
         {
             throw new InvalidOperationException("入力監視はすでに開始しています。");
         }
@@ -76,12 +72,7 @@ internal sealed class WindowsKeyboardController : IDisposable
             _keyboardProcedure,
             module,
             0);
-        _mouseHook = NativeMethods.SetWindowsHookEx(
-            WhMouseLl,
-            _mouseProcedure,
-            module,
-            0);
-        if (_keyboardHook == IntPtr.Zero || _mouseHook == IntPtr.Zero)
+        if (_keyboardHook == IntPtr.Zero)
         {
             DisposeHooks();
             throw new Win32Exception(
@@ -90,6 +81,15 @@ internal sealed class WindowsKeyboardController : IDisposable
         }
 
         _logger.Log($"Windows入力監視開始 targetPid={targetProcessId}");
+    }
+
+    public void EndApplicationMenuSelection()
+    {
+        if (!_disposed)
+        {
+            _actions.Writer.TryWrite(
+                new QueuedAction(ResetApplicationMenu: true));
+        }
     }
 
     public void Dispose()
@@ -132,7 +132,9 @@ internal sealed class WindowsKeyboardController : IDisposable
                 data);
         }
 
-        var virtualKey = (uint)Marshal.ReadInt32(data);
+        var keyboardInput =
+            Marshal.PtrToStructure<NativeMethods.LowLevelKeyboardInput>(data);
+        var virtualKey = keyboardInput.VirtualKey;
         var messageValue = message.ToInt32();
         if (messageValue is WmKeyUp or WmSysKeyUp)
         {
@@ -188,6 +190,28 @@ internal sealed class WindowsKeyboardController : IDisposable
         }
 
         _swallowedKeys.Add(virtualKey);
+        if (command is KeyboardCommand.Home or
+                KeyboardCommand.Memo or
+                KeyboardCommand.Applications &&
+            !DirectShortcutDebouncer.ShouldAccept(
+                command.Value,
+                keyboardInput.Time))
+        {
+            _actions.Writer.TryWrite(
+                new QueuedAction(
+                    LogMessage:
+                        $"Duplicate shortcut suppressed command={command} " +
+                        $"eventTime={keyboardInput.Time} " +
+                        $"flags=0x{keyboardInput.Flags:X}"));
+            return (IntPtr)1;
+        }
+
+        _actions.Writer.TryWrite(
+            new QueuedAction(
+                LogMessage:
+                    $"Keyboard command accepted command={command} " +
+                    $"eventTime={keyboardInput.Time} " +
+                    $"flags=0x{keyboardInput.Flags:X}"));
         if (command == KeyboardCommand.Quit)
         {
             QuitRequested?.Invoke();
@@ -198,19 +222,6 @@ internal sealed class WindowsKeyboardController : IDisposable
         }
 
         return (IntPtr)1;
-    }
-
-    private IntPtr MouseHook(int code, IntPtr message, IntPtr data)
-    {
-        if (code >= 0 &&
-            message.ToInt32() is WmLeftButtonDown or WmRightButtonDown &&
-            TargetIsActive())
-        {
-            _actions.Writer.TryWrite(
-                new QueuedAction(ResetApplicationMenu: true));
-        }
-
-        return NativeMethods.CallNextHookEx(_mouseHook, code, message, data);
     }
 
     private bool TargetIsActive()
@@ -236,6 +247,12 @@ internal sealed class WindowsKeyboardController : IDisposable
             {
                 try
                 {
+                    if (action.LogMessage is not null)
+                    {
+                        _logger.Log(action.LogMessage);
+                        continue;
+                    }
+
                     if (action.ResetApplicationMenu)
                     {
                         _commandProcessor.ResetApplicationMenu();
@@ -277,16 +294,12 @@ internal sealed class WindowsKeyboardController : IDisposable
             _keyboardHook = IntPtr.Zero;
         }
 
-        if (_mouseHook != IntPtr.Zero)
-        {
-            _ = NativeMethods.UnhookWindowsHookEx(_mouseHook);
-            _mouseHook = IntPtr.Zero;
-        }
     }
 
     private sealed record QueuedAction(
         KeyboardCommand? Command = null,
-        bool ResetApplicationMenu = false);
+        bool ResetApplicationMenu = false,
+        string? LogMessage = null);
 
     private static class NativeMethods
     {
@@ -294,6 +307,16 @@ internal sealed class WindowsKeyboardController : IDisposable
             int code,
             IntPtr message,
             IntPtr data);
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct LowLevelKeyboardInput
+        {
+            internal uint VirtualKey;
+            internal uint ScanCode;
+            internal uint Flags;
+            internal uint Time;
+            internal nuint ExtraInfo;
+        }
 
         [DllImport("user32.dll", SetLastError = true)]
         internal static extern IntPtr SetWindowsHookEx(

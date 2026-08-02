@@ -4,14 +4,11 @@ namespace RokidControl.Core.Navigation;
 
 public sealed class KeyboardCommandProcessor
 {
-    private static readonly TimeSpan ApplicationMenuInputWindow =
-        TimeSpan.FromSeconds(8);
     private readonly IRokidInputSession _input;
     private readonly int _screenWidth;
     private readonly int _screenHeight;
     private readonly Action<string>? _log;
-    private long _applicationMenuActiveUntilUtcTicks;
-    private int _applicationMenuGeneration;
+    private bool _applicationMenuActive;
 
     public KeyboardCommandProcessor(
         IRokidInputSession input,
@@ -47,23 +44,12 @@ public sealed class KeyboardCommandProcessor
                     "KEYCODE_DPAD_RIGHT",
                     cancellationToken).ConfigureAwait(false);
                 break;
-            case KeyboardCommand.Down:
-                await SendApplicationMenuKeyAsync(
-                    "KEYCODE_DPAD_DOWN",
-                    cancellationToken).ConfigureAwait(false);
-                break;
-            case KeyboardCommand.Up:
-                await SendApplicationMenuKeyAsync(
-                    "KEYCODE_DPAD_UP",
-                    cancellationToken).ConfigureAwait(false);
-                break;
             case KeyboardCommand.Enter:
                 if (IsApplicationMenuActive())
                 {
                     await SendKeyAsync(
                         "KEYCODE_ENTER",
                         cancellationToken).ConfigureAwait(false);
-                    DeactivateApplicationMenu();
                 }
                 else
                 {
@@ -72,7 +58,6 @@ public sealed class KeyboardCommandProcessor
 
                 break;
             case KeyboardCommand.Back:
-                DeactivateApplicationMenu();
                 await SendKeyAsync(
                     "KEYCODE_BACK",
                     cancellationToken).ConfigureAwait(false);
@@ -118,7 +103,6 @@ public sealed class KeyboardCommandProcessor
         }
 
         await SendKeyAsync(androidKey, cancellationToken).ConfigureAwait(false);
-        ExtendApplicationMenu();
     }
 
     private async Task WakeAndTapAsync(
@@ -144,55 +128,26 @@ public sealed class KeyboardCommandProcessor
 
     private bool IsApplicationMenuActive()
     {
-        if (Volatile.Read(ref _applicationMenuActiveUntilUtcTicks) >=
-            DateTime.UtcNow.Ticks)
-        {
-            return true;
-        }
-
-        DeactivateApplicationMenu();
-        return false;
+        return Volatile.Read(ref _applicationMenuActive);
     }
 
     private void ActivateApplicationMenu()
     {
-        ExtendApplicationMenu();
-        ApplicationMenuModeChanged?.Invoke(true);
-    }
-
-    private void ExtendApplicationMenu()
-    {
-        Volatile.Write(
-            ref _applicationMenuActiveUntilUtcTicks,
-            DateTime.UtcNow.Add(ApplicationMenuInputWindow).Ticks);
-        var generation = Interlocked.Increment(
-            ref _applicationMenuGeneration);
-        _ = ExpireApplicationMenuAsync(generation);
+        if (!Volatile.Read(ref _applicationMenuActive))
+        {
+            Volatile.Write(ref _applicationMenuActive, true);
+            ApplicationMenuModeChanged?.Invoke(true);
+        }
     }
 
     private void DeactivateApplicationMenu()
     {
-        if (Interlocked.Exchange(
-                ref _applicationMenuActiveUntilUtcTicks,
-                0) == 0)
+        if (!Volatile.Read(ref _applicationMenuActive))
         {
             return;
         }
 
-        Interlocked.Increment(ref _applicationMenuGeneration);
+        Volatile.Write(ref _applicationMenuActive, false);
         ApplicationMenuModeChanged?.Invoke(false);
-    }
-
-    private async Task ExpireApplicationMenuAsync(int generation)
-    {
-        await Task.Delay(ApplicationMenuInputWindow).ConfigureAwait(false);
-        if (generation != Volatile.Read(ref _applicationMenuGeneration) ||
-            Volatile.Read(ref _applicationMenuActiveUntilUtcTicks) >
-            DateTime.UtcNow.Ticks)
-        {
-            return;
-        }
-
-        DeactivateApplicationMenu();
     }
 }

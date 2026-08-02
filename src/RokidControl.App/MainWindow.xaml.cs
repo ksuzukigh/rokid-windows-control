@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using RokidControl.App.Services;
 using RokidControl.Core.Connections;
 using RokidControl.Core.Imaging;
@@ -21,6 +22,9 @@ public partial class MainWindow : Window
         new(2, TimeSpan.FromSeconds(5));
     private readonly RapidFailureGuard _liveFailureGuard =
         new(2, TimeSpan.FromSeconds(5));
+    private readonly DispatcherTimer _focusRestoringPointerTimer;
+    private readonly FocusRestoringPointerState _focusRestoringPointerState =
+        new();
     private CancellationTokenSource? _operationCancellation;
     private RokidConnectionManager? _connection;
     private ScrcpyProcessManager? _scrcpy;
@@ -39,6 +43,13 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _focusRestoringPointerTimer = new DispatcherTimer(
+            DispatcherPriority.Input)
+        {
+            Interval = PointerSelectionPolicy.FocusRestoringClickWindow,
+        };
+        _focusRestoringPointerTimer.Tick +=
+            FocusRestoringPointerTimer_Tick;
         _logger = new AppLogger(AppPaths.LogFile);
         LiveVisibilitySlider.Value = AppPreferences.LoadLiveVisibility();
         _preferencesLoaded = true;
@@ -48,6 +59,29 @@ public partial class MainWindow : Window
     private void Window_Loaded(object sender, RoutedEventArgs eventArguments)
     {
         FitInitialWindowToCurrentWorkArea(560, 600, 440, 480);
+    }
+
+    private void Window_Activated(object? sender, EventArgs eventArguments)
+    {
+        if (_focusRestoringPointerState.IsPending)
+        {
+            _focusRestoringPointerTimer.Stop();
+            _focusRestoringPointerTimer.Start();
+        }
+    }
+
+    private void Window_Deactivated(object? sender, EventArgs eventArguments)
+    {
+        _focusRestoringPointerTimer.Stop();
+        _focusRestoringPointerState.MarkWindowDeactivated();
+    }
+
+    private void FocusRestoringPointerTimer_Tick(
+        object? sender,
+        EventArgs eventArguments)
+    {
+        _focusRestoringPointerTimer.Stop();
+        _focusRestoringPointerState.Expire();
     }
 
     private async void StandardButton_Click(object sender, RoutedEventArgs e)
@@ -250,7 +284,8 @@ public partial class MainWindow : Window
             resources,
             _logger,
             screenWidth,
-            screenHeight);
+            screenHeight,
+            _connection.IsOriginalCameraForegroundAsync);
         var input = new PersistentAdbInputSession(
             resources.AdbPath,
             serial,
@@ -267,6 +302,9 @@ public partial class MainWindow : Window
             liveSession.Visibility = LiveVisibilitySlider.Value;
             liveSession.FrameReady += LiveSession_FrameReady;
             liveSession.Failed += LiveSession_Failed;
+            liveSession.DisplaySourceChanged +=
+                LiveSession_DisplaySourceChanged;
+            liveSession.StatusChanged += LiveSession_StatusChanged;
             keyboard.QuitRequested += Keyboard_QuitRequested;
             keyboard.ApplicationMenuModeChanged +=
                 Keyboard_ApplicationMenuModeChanged;
@@ -287,6 +325,9 @@ public partial class MainWindow : Window
             keyboard.Dispose();
             liveSession.FrameReady -= LiveSession_FrameReady;
             liveSession.Failed -= LiveSession_Failed;
+            liveSession.DisplaySourceChanged -=
+                LiveSession_DisplaySourceChanged;
+            liveSession.StatusChanged -= LiveSession_StatusChanged;
             liveSession.Dispose();
             throw;
         }
@@ -482,6 +523,27 @@ public partial class MainWindow : Window
         });
     }
 
+    private void LiveSession_DisplaySourceChanged(LiveDisplaySource source)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            Title = source == LiveDisplaySource.OriginalCameraScreen
+                ? "Rokid AI Glasses RV101（純正カメラ）"
+                : "Rokid AI Glasses RV101（ライブ映像）";
+        });
+    }
+
+    private void LiveSession_StatusChanged(string? message)
+    {
+        Dispatcher.InvokeAsync(() =>
+        {
+            LiveStatusText.Text = message ?? string.Empty;
+            LiveStatus.Visibility = string.IsNullOrWhiteSpace(message)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        });
+    }
+
     private async Task RecoverLiveSessionAsync(Exception? cause = null)
     {
         if (_isClosing || _isRecovering || _connection is null)
@@ -608,6 +670,7 @@ public partial class MainWindow : Window
         ErrorPanel.Visibility = Visibility.Collapsed;
         LivePanel.Visibility = Visibility.Visible;
         KeyboardHint.Visibility = Visibility.Visible;
+        LiveStatus.Visibility = Visibility.Collapsed;
         KeyboardHintText.Text = NavigationHintText.Normal;
         Title = "Rokid AI Glasses RV101（ライブ映像）";
         WindowStyle = WindowStyle.SingleBorderWindow;
@@ -711,6 +774,12 @@ public partial class MainWindow : Window
         object sender,
         MouseButtonEventArgs eventArguments)
     {
+        if (PointerInputRestoredWindowFocus())
+        {
+            return;
+        }
+
+        _keyboard?.EndApplicationMenuSelection();
         if (_connection is null ||
             !TryMapLivePoint(
                 eventArguments.GetPosition(LiveImage),
@@ -737,6 +806,12 @@ public partial class MainWindow : Window
         object sender,
         MouseButtonEventArgs eventArguments)
     {
+        if (PointerInputRestoredWindowFocus())
+        {
+            return;
+        }
+
+        _keyboard?.EndApplicationMenuSelection();
         if (_connection is null)
         {
             return;
@@ -791,6 +866,17 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private bool PointerInputRestoredWindowFocus()
+    {
+        if (!_focusRestoringPointerState.TryConsume())
+        {
+            return false;
+        }
+
+        _focusRestoringPointerTimer.Stop();
+        return true;
+    }
+
     private void ShowProgress(string message)
     {
         Dispatcher.VerifyAccess();
@@ -826,6 +912,9 @@ public partial class MainWindow : Window
         }
 
         _isClosing = true;
+        _focusRestoringPointerTimer.Stop();
+        _focusRestoringPointerTimer.Tick -=
+            FocusRestoringPointerTimer_Tick;
         using var shutdownDisplayCancellation =
             new CancellationTokenSource();
         var shutdownDisplayTask = ShowShutdownIfSlowAsync(
@@ -907,6 +996,9 @@ public partial class MainWindow : Window
         {
             _liveSession.FrameReady -= LiveSession_FrameReady;
             _liveSession.Failed -= LiveSession_Failed;
+            _liveSession.DisplaySourceChanged -=
+                LiveSession_DisplaySourceChanged;
+            _liveSession.StatusChanged -= LiveSession_StatusChanged;
             _liveSession.Dispose();
             _liveSession = null;
         }
@@ -915,6 +1007,7 @@ public partial class MainWindow : Window
         Interlocked.Exchange(ref _pendingLiveFrame, null);
         LiveImage.Source = null;
         KeyboardHint.Visibility = Visibility.Collapsed;
+        LiveStatus.Visibility = Visibility.Collapsed;
     }
 
     private static class NativeMethods

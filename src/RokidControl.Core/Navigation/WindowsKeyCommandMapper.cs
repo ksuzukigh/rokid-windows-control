@@ -21,8 +21,6 @@ public static class WindowsKeyCommandMapper
         {
             0x25 => KeyboardCommand.Left,
             0x27 => KeyboardCommand.Right,
-            0x28 => KeyboardCommand.Down,
-            0x26 => KeyboardCommand.Up,
             0x0D => KeyboardCommand.Enter,
             0x1B => KeyboardCommand.Back,
             'H' => KeyboardCommand.Home,

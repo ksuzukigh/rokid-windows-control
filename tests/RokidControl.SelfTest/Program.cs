@@ -5,12 +5,17 @@ using RokidControl.Core.Processes;
 
 var tests = new List<(string Name, Action Run)>
 {
+    ("Window focus click policy", TestPointerSelectionPolicy),
+    ("Window focus click state", TestFocusRestoringPointerState),
+    ("Direct shortcut debouncing", TestKeyboardShortcutDebouncer),
     ("直接ショートカット座標", TestShortcutCoordinates),
     ("ADB devices解析", TestAdbDevices),
     ("ADB mDNS解析", TestMdns),
     ("画面サイズ解析", TestScreenSize),
     ("IPv4解析", TestIpv4),
     ("Rokid機種判定", TestRokidIdentity),
+    ("接続暗号化判定", TestConnectionEncryption),
+    ("純正カメラ判定", TestCameraAppPolicy),
     ("HUD合成", TestHudComposition),
     ("Windowsキー割り当て", TestWindowsKeyMapping),
     ("キーボード入力処理", () =>
@@ -31,6 +36,8 @@ var tests = new List<(string Name, Action Run)>
         TestReconnectUsbToSecureWifiAsync().GetAwaiter().GetResult()),
     ("旧5555番Wi-Fi接続の拒否", () =>
         TestLegacyFixedWifiRejectedAsync().GetAwaiter().GetResult()),
+    ("任意ポートの平文Wi-Fi接続拒否", () =>
+        TestPlaintextWifiRejectedAsync().GetAwaiter().GetResult()),
     ("無線準備失敗時のUSB継続", () =>
         TestDelayedUsbKeepsUsbTransportAsync().GetAwaiter().GetResult()),
 };
@@ -151,6 +158,60 @@ static void TestRokidIdentity()
     Assert(!AdbParsers.IsRokidDevice("Pixel 10", "Google"), "他社端末を拒否");
 }
 
+static void TestConnectionEncryption()
+{
+    var encrypted = ConnectionEncryption.Inspect(
+        "192.168.1.20:41001",
+        ["", "-1"],
+        wirelessDebuggingEnabled: true);
+    Assert(encrypted.IsEncrypted, "TLS接続を採用");
+
+    var samePort = ConnectionEncryption.Inspect(
+        "192.168.1.20:7000",
+        ["7000", "-1"],
+        wirelessDebuggingEnabled: true);
+    AssertEqual(
+        ConnectionEncryptionVerdict.PlaintextConnection,
+        samePort.Verdict,
+        "任意ポートの平文接続を拒否");
+
+    var otherPort = ConnectionEncryption.Inspect(
+        "192.168.1.20:41001",
+        ["5556", "37000"],
+        wirelessDebuggingEnabled: true);
+    AssertEqual(
+        ConnectionEncryptionVerdict.PlaintextListenerRemains,
+        otherPort.Verdict,
+        "別ポートに残る平文入口を拒否");
+    AssertEqual(
+        "192.168.1.20:40123",
+        ConnectionEncryption.BuildUsbTlsAddress(
+            "4: wlan0 inet 192.168.1.20/24 scope global wlan0",
+            "40123\n"),
+        "USBからTLS接続先を組み立てる");
+}
+
+static void TestCameraAppPolicy()
+{
+    Assert(
+        CameraAppPolicy.IsOriginalCameraForeground(
+            "topResumedActivity=ActivityRecord{123 u0 " +
+            "com.android.camera2/com.android.camera.CameraActivity t42}"),
+        "Android純正カメラ");
+    Assert(
+        CameraAppPolicy.IsOriginalCameraForeground(
+            "ResumedActivity: ActivityRecord{123 u0 " +
+            "com.rokid.os.sprite.assistserver/" +
+            "com.rokid.os.sprite.assist.media.page.CameraActivity t42}"),
+        "Rokid純正カメラ");
+    Assert(
+        !CameraAppPolicy.IsOriginalCameraForeground(
+            "topResumedActivity=ActivityRecord{123 u0 " +
+            "io.github.ksuzukigh.phototomac/.MainActivity t42}\n" +
+            "Hist #1: com.android.camera2/.CameraActivity"),
+        "履歴とPhoto to Macを純正カメラと誤判定しない");
+}
+
 static void TestHudComposition()
 {
     var camera = SolidFrame(3, 3, 10, 20, 30);
@@ -205,6 +266,10 @@ static void TestHudComposition()
         3);
     AssertEqual(3, normalized.Width, "アスペクトフィル出力幅");
     AssertEqual(3, normalized.Height, "アスペクトフィル出力高さ");
+
+    var cameraScreen = HudCompositor.ShowDeviceScreen(tallHud, 3, 3);
+    AssertEqual(3, cameraScreen.Width, "純正カメラ画面の出力幅");
+    AssertEqual(3, cameraScreen.Height, "純正カメラ画面の出力高さ");
 }
 
 static void TestWindowsKeyMapping()
@@ -213,6 +278,14 @@ static void TestWindowsKeyMapping()
         KeyboardCommand.Left,
         WindowsKeyCommandMapper.Map(0x25, false, false),
         "左キー");
+    AssertEqual<KeyboardCommand?>(
+        null,
+        WindowsKeyCommandMapper.Map(0x26, false, false),
+        "上キーは割り当てない");
+    AssertEqual<KeyboardCommand?>(
+        null,
+        WindowsKeyCommandMapper.Map(0x28, false, false),
+        "下キーは割り当てない");
     AssertEqual<KeyboardCommand?>(
         null,
         WindowsKeyCommandMapper.Map(0x20, false, false),
@@ -251,6 +324,69 @@ static void TestWindowsKeyMapping()
         "アプリ選択中の案内");
 }
 
+static void TestPointerSelectionPolicy()
+{
+    Assert(
+        !PointerSelectionPolicy.ShouldEndApplicationSelection(TimeSpan.Zero),
+        "Focus-restoring click preserves application selection");
+    Assert(
+        PointerSelectionPolicy.IsFocusRestoringClick(TimeSpan.Zero),
+        "Focus-restoring click is not sent as device input");
+    Assert(
+        !PointerSelectionPolicy.ShouldEndApplicationSelection(
+            PointerSelectionPolicy.FocusRestoringClickWindow),
+        "Focus click boundary preserves application selection");
+    Assert(
+        PointerSelectionPolicy.ShouldEndApplicationSelection(
+            PointerSelectionPolicy.FocusRestoringClickWindow +
+            TimeSpan.FromMilliseconds(1)),
+        "Later direct input ends application selection");
+    Assert(
+        !PointerSelectionPolicy.IsFocusRestoringClick(
+            PointerSelectionPolicy.FocusRestoringClickWindow +
+            TimeSpan.FromMilliseconds(1)),
+        "Later direct input is sent to the device");
+}
+
+static void TestFocusRestoringPointerState()
+{
+    var state = new FocusRestoringPointerState();
+    Assert(!state.TryConsume(), "Normal device click is not a focus click");
+
+    state.MarkWindowDeactivated();
+    Assert(state.IsPending, "Window deactivation arms the focus click");
+    Assert(
+        state.TryConsume(),
+        "First click is preserved even when mouse input arrives before activation");
+    Assert(!state.IsPending, "Focus click is consumed only once");
+    Assert(!state.TryConsume(), "Second click is direct device input");
+
+    state.MarkWindowDeactivated();
+    state.Expire();
+    Assert(!state.TryConsume(), "Expired focus click becomes direct device input");
+}
+
+static void TestKeyboardShortcutDebouncer()
+{
+    var debouncer = new KeyboardShortcutDebouncer(
+        TimeSpan.FromMilliseconds(750));
+    Assert(
+        debouncer.ShouldAccept(KeyboardCommand.Memo, 1_000),
+        "First shortcut is accepted");
+    Assert(
+        !debouncer.ShouldAccept(KeyboardCommand.Memo, 1_400),
+        "Duplicate shortcut is suppressed");
+    Assert(
+        debouncer.ShouldAccept(KeyboardCommand.Applications, 1_500),
+        "Different shortcut is accepted");
+    Assert(
+        debouncer.ShouldAccept(KeyboardCommand.Memo, 2_000),
+        "Memo after another shortcut is accepted");
+    Assert(
+        debouncer.ShouldAccept(KeyboardCommand.Memo, 2_751),
+        "Same shortcut after the debounce window is accepted");
+}
+
 static async Task TestKeyboardCommandProcessorAsync()
 {
     var input = new RecordingInputSession();
@@ -258,11 +394,9 @@ static async Task TestKeyboardCommandProcessorAsync()
     var applicationMenuModes = new List<bool>();
     processor.ApplicationMenuModeChanged += applicationMenuModes.Add;
 
-    await processor.HandleAsync(KeyboardCommand.Down);
     await processor.HandleAsync(KeyboardCommand.Right);
-    await processor.HandleAsync(KeyboardCommand.Up);
     await processor.HandleAsync(KeyboardCommand.Enter);
-    AssertEqual(0, input.Keys.Count, "アプリ一覧の外では方向キーとEnterを送らない");
+    AssertEqual(0, input.Keys.Count, "アプリ一覧の外では左右キーとEnterを送らない");
 
     await processor.HandleAsync(KeyboardCommand.Memo);
     AssertEqual(
@@ -291,14 +425,21 @@ static async Task TestKeyboardCommandProcessorAsync()
     AssertEqual("KEYCODE_DPAD_RIGHT", input.Keys[1], "右キー");
     await processor.HandleAsync(KeyboardCommand.Enter);
     AssertEqual("KEYCODE_ENTER", input.Keys.Last(), "Enterでアプリを決定");
-    AssertEqual(false, applicationMenuModes.Last(), "決定後は選択モード終了");
+    AssertEqual(true, applicationMenuModes.Last(), "決定後も選択モードを維持");
 
     var keyCountAfterEnter = input.Keys.Count;
     await processor.HandleAsync(KeyboardCommand.Right);
-    AssertEqual(keyCountAfterEnter, input.Keys.Count, "決定後の方向キーは送らない");
+    AssertEqual(
+        keyCountAfterEnter + 1,
+        input.Keys.Count,
+        "アプリから戻るため決定後も左右キーを送る");
 
     await processor.HandleAsync(KeyboardCommand.Back);
     AssertEqual("KEYCODE_BACK", input.Keys.Last(), "Escは常に戻る");
+    AssertEqual(true, applicationMenuModes.Last(), "Esc後も選択モードを維持");
+
+    await processor.HandleAsync(KeyboardCommand.Home);
+    AssertEqual(false, applicationMenuModes.Last(), "Hで選択モード終了");
 }
 
 static async Task TestKeyboardCommandRecoveryAsync()
@@ -625,6 +766,42 @@ static async Task TestLegacyFixedWifiRejectedAsync()
     }
 }
 
+static async Task TestPlaintextWifiRejectedAsync()
+{
+    var addressFile = Path.Combine(
+        Path.GetTempPath(),
+        $"rokid-plaintext-wifi-{Guid.NewGuid():N}.txt");
+    try
+    {
+        var manager = new RokidConnectionManager(
+            new PlaintextWifiAdbClient(),
+            addressFile,
+            "unused-watchdog.sh");
+        await using (manager.ConfigureAwait(false))
+        {
+            try
+            {
+                _ = await manager.ConnectForStartupAsync(
+                    searchDuration: TimeSpan.Zero);
+                throw new InvalidOperationException(
+                    "平文Wi-Fi接続を採用してはいけません。");
+            }
+            catch (RokidConnectionException exception)
+                when (exception.Error ==
+                    RokidConnectionError.PlaintextListenerRemains)
+            {
+                // Expected safety failure.
+            }
+        }
+
+        Assert(!File.Exists(addressFile), "平文接続先を保存しない");
+    }
+    finally
+    {
+        File.Delete(addressFile);
+    }
+}
+
 static async Task TestSecureWifiHandoffOnDeviceAsync(string adbPath)
 {
     var addressFile = Path.Combine(
@@ -760,6 +937,9 @@ sealed class ConnectedWifiAdbClient : IAdbClient
         {
             ["devices"] =>
                 "List of devices attached\n192.168.1.20:41001\tdevice\n",
+            [.., "getprop", "service.adb.tcp.port"] => "-1\n",
+            [.., "getprop", "persist.adb.tcp.port"] => "-1\n",
+            [.., "settings", "get", "global", "adb_wifi_enabled"] => "1\n",
             [.., "getprop", "ro.product.model"] => "RG-glasses\n",
             [.., "getprop", "ro.product.manufacturer"] => "Rokid\n",
             _ => string.Empty,
@@ -794,6 +974,9 @@ sealed class UsbThenSavedWifiAdbClient : IAdbClient
                 ConnectSavedAddress(),
             ["-s", "192.168.1.20:41001", "get-state"] when WifiConnected =>
                 "device\n",
+            [.., "getprop", "service.adb.tcp.port"] => "-1\n",
+            [.., "getprop", "persist.adb.tcp.port"] => "-1\n",
+            [.., "settings", "get", "global", "adb_wifi_enabled"] => "1\n",
             [.., "getprop", "ro.product.model"] => "RG-glasses\n",
             [.., "getprop", "ro.product.manufacturer"] => "Rokid\n",
             _ => string.Empty,
@@ -834,6 +1017,9 @@ sealed class DelayedUsbAdbClient : IAdbClient
                 "List of devices attached\nUSB123\tdevice\n",
             ["devices"] => "List of devices attached\n",
             ["mdns", "services"] => string.Empty,
+            [.., "getprop", "service.adb.tcp.port"] => "-1\n",
+            [.., "getprop", "persist.adb.tcp.port"] => "-1\n",
+            [.., "settings", "get", "global", "adb_wifi_enabled"] => "1\n",
             [.., "getprop", "ro.product.model"] => "RG-glasses\n",
             [.., "getprop", "ro.product.manufacturer"] => "Rokid\n",
             _ => string.Empty,
@@ -889,6 +1075,8 @@ sealed class UsbToSecureWifiAdbClient(string secureAddress) : IAdbClient
             ["-s", var address, "get-state"]
                 when address == secureAddress && SecureAddressConnected =>
                 "device\n",
+            [.., "getprop", "service.adb.tcp.port"] => "-1\n",
+            [.., "getprop", "persist.adb.tcp.port"] => "-1\n",
             [.., "getprop", "ro.product.model"] => "RG-glasses\n",
             [.., "getprop", "ro.product.manufacturer"] => "Rokid\n",
             _ => string.Empty,
@@ -950,7 +1138,7 @@ sealed class ReconnectUsbToSecureWifiAdbClient(
             ["-s", _, "shell", "settings", "put", "global", "adb_wifi_enabled", "1"] =>
                 EnableSecureWirelessAdb(),
             ["-s", _, "shell", "settings", "get", "global", "adb_wifi_enabled"] =>
-                SecureWirelessAdbEnabled ? "1\n" : "0\n",
+                "1\n",
             ["mdns", "services"] when SecureWirelessAdbEnabled =>
                 $"adb-USB123-recovery._adb-tls-connect._tcp " +
                 $"_adb-tls-connect._tcp {recoveredAddress}\n",
@@ -959,6 +1147,8 @@ sealed class ReconnectUsbToSecureWifiAdbClient(
             ["-s", var address, "get-state"]
                 when address == recoveredAddress && RecoveredAddressConnected =>
                 "device\n",
+            [.., "getprop", "service.adb.tcp.port"] => "-1\n",
+            [.., "getprop", "persist.adb.tcp.port"] => "-1\n",
             [.., "getprop", "ro.product.model"] => "RG-glasses\n",
             [.., "getprop", "ro.product.manufacturer"] => "Rokid\n",
             _ => string.Empty,
@@ -1020,6 +1210,9 @@ sealed class LegacyFixedWifiAdbClient(
             ["-s", var stateAddress, "get-state"]
                 when stateAddress == secureAddress && SecureAddressConnected =>
                 "device\n",
+            [.., "getprop", "service.adb.tcp.port"] => "-1\n",
+            [.., "getprop", "persist.adb.tcp.port"] => "-1\n",
+            [.., "settings", "get", "global", "adb_wifi_enabled"] => "1\n",
             [.., "getprop", "ro.product.model"] => "RG-glasses\n",
             [.., "getprop", "ro.product.manufacturer"] => "Rokid\n",
             _ => string.Empty,
@@ -1037,6 +1230,32 @@ sealed class LegacyFixedWifiAdbClient(
     {
         SecureAddressConnected = true;
         return $"connected to {secureAddress}\n";
+    }
+}
+
+sealed class PlaintextWifiAdbClient : IAdbClient
+{
+    public Task<CommandResult> RunAsync(
+        IEnumerable<string> arguments,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var values = arguments.ToArray();
+        var output = values switch
+        {
+            ["devices"] =>
+                "List of devices attached\n192.168.1.20:7000\tdevice\n",
+            [.., "getprop", "service.adb.tcp.port"] => "7000\n",
+            [.., "getprop", "persist.adb.tcp.port"] => "-1\n",
+            [.., "settings", "get", "global", "adb_wifi_enabled"] => "1\n",
+            [.., "getprop", "ro.product.model"] => "RG-glasses\n",
+            [.., "getprop", "ro.product.manufacturer"] => "Rokid\n",
+            ["mdns", "services"] => string.Empty,
+            _ => string.Empty,
+        };
+        return Task.FromResult(
+            new CommandResult(0, output, string.Empty, false));
     }
 }
 

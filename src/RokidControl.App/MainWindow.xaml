@@ -15,6 +15,8 @@
         Foreground="White"
         UseLayoutRounding="True"
         Loaded="Window_Loaded"
+        Activated="Window_Activated"
+        Deactivated="Window_Deactivated"
         Closing="Window_Closing">
     <Grid>
         <ScrollViewer x:Name="ModePanel"
@@ -188,6 +190,24 @@
                                Foreground="White"
                                FontSize="13"
                                FontWeight="SemiBold" />
+                </Border>
+                <Border x:Name="LiveStatus"
+                        Visibility="Collapsed"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Margin="24"
+                        Padding="16,10"
+                        CornerRadius="7"
+                        Background="#E00D1311"
+                        BorderBrush="#6C8178"
+                        BorderThickness="1"
+                        IsHitTestVisible="False">
+                    <TextBlock x:Name="LiveStatusText"
+                               Foreground="White"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
                 </Border>
             </Grid>
         </Grid>

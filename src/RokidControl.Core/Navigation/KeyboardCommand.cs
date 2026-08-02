@@ -4,8 +4,6 @@ public enum KeyboardCommand
 {
     Left,
     Right,
-    Down,
-    Up,
     Enter,
     Back,
     Home,
