@@ -2,13 +2,13 @@
 
 Rokid AI Glasses RV101の画面をWindowsに表示し、Windowsのマウスとキーボードで操作するアプリです。
 
+Macをお使いの方には、[Mac版のRokid Control](https://github.com/ksuzukigh/rokid-mac-control)もあります。
+
 ![WindowsからRokid AI Glassesを操作するイメージ](docs/images/mac-control-overview.png)
 
-**正式版: 0.2.0（Mac版1.2.7追従・一覧の初回キー操作を修正）**
+**正式版: 0.2.0**
 
 [最新版 0.2.0 をダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)
-
-[今回の変更と実機確認](docs/UPDATE-2026-10-03.md)を参照してください。
 
 ## できること
 
@@ -18,8 +18,6 @@ Rokid AI Glasses RV101の画面をWindowsに表示し、Windowsのマウスと�
 - USBとWi-Fiの両方で接続できる
 - 純正「カメラ」、Rokid ZOOM IN CAMERA、テンプル右上ボタンが使える
 - 映像の下のM・H・Aボタンからメモ・Home・アプリ一覧を開ける
-- 現行YodaOSのHome操作位置を読み取り、音量・明るさを左右キーで調整できる
-- 準備済みR08 Access Bridge 2.0.1の操作補助と併用できる
 - Wi-Fi切断やカメラ使用後に自動でつなぎ直す
 
 ### ライブ映像
@@ -93,7 +91,7 @@ Rokidを再起動したあともケーブルなしで接続したい場合は、
 
 ### 1. Rokid Controlをダウンロードする
 
-[最新版のRokid Control for Windowsをダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)します。正式版0.2.0には、このREADMEで紹介するMac版1.2.7対応とキー操作の修正が含まれます。
+[最新版のRokid Control for Windowsをダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)します。
 
 リリースページにある`Rokid-Control-Windows-x64-<version>.zip`をダウンロードします。
 
@@ -226,17 +224,4 @@ Rokid Controlのウインドウ右上にある「×」を押します。`Alt` + 
 
 本アプリのソースコードは[Apache License 2.0](LICENSE)で公開しています。同梱しているscrcpyとAndroid Platform Toolsなどのライセンスは、アプリ内の`Licenses`フォルダーに収録しています。
 
-<details>
-<summary>開発者向けの詳しい情報</summary>
-
-Windows版は.NET 10 SDKで作成しています。開発用のビルド、検証、パッケージ作成の手順は次のとおりです。
-
-```powershell
-.\tools\verify.ps1
-.\tools\prepare-vendor.ps1
-.\tools\package.ps1 -Version 0.2.0
-```
-
-仕様は[仕様書](docs/SPECIFICATION.md)、検証結果は[技術試験計画](docs/TECHNICAL-TEST-PLAN.md)、配布方針は[配布方針](docs/CODE-SIGNING.md)を参照してください。
-
-</details>
+[開発者向け情報](docs/DEVELOPMENT.md)
