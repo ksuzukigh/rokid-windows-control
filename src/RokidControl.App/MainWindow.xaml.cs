@@ -61,6 +61,12 @@ public partial class MainWindow : Window
         FitInitialWindowToCurrentWorkArea(560, 600, 440, 480);
     }
 
+    private void NavigationButton_Click(object sender, RoutedEventArgs eventArguments)
+    {
+        if (sender is Button button && Enum.TryParse<KeyboardCommand>(button.Tag?.ToString(), out var command))
+            _keyboard?.QueueCommand(command);
+    }
+
     private void Window_Activated(object? sender, EventArgs eventArguments)
     {
         if (_focusRestoringPointerState.IsPending)
@@ -766,6 +772,8 @@ public partial class MainWindow : Window
             KeyboardHintText.Text = active
                 ? NavigationHintText.ApplicationMenu
                 : NavigationHintText.Normal;
+            KeyboardHintText.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+            NavigationButtons.Visibility = active ? Visibility.Collapsed : Visibility.Visible;
             _standardNavigationOverlay?.SetApplicationMenuActive(active);
         });
     }

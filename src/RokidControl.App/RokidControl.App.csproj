@@ -20,6 +20,14 @@
 
   <ItemGroup>
     <Resource Include="Resources\RokidControl.ico" />
+    <Content Include="Resources\rokid_r08_direction_bridge.sh">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="Resources\rokid_ui_reader.jar">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
     <Content Include="Resources\rokid_windows_wifi_watchdog.sh">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

@@ -27,6 +27,7 @@ public sealed class RokidConnectionManager : IAsyncDisposable
     private Task? _heartbeatTask;
     private string _serial = string.Empty;
     private bool _sawPlaintextListener;
+    private bool _r08ClosureAttempted;
 
     public RokidConnectionManager(
         IAdbClient adb,
@@ -381,6 +382,8 @@ public sealed class RokidConnectionManager : IAsyncDisposable
             TimeSpan.FromSeconds(5),
             cancellationToken).ConfigureAwait(false);
 
+        await new R08Compatibility(_adb, Path.GetDirectoryName(_watchdogFile)!)
+            .RestoreAsync(serial, cancellationToken).ConfigureAwait(false);
         var oldPid = await _adb.RunAsync(
             ["-s", serial, "shell", "cat", RemoteWatchdogPid],
             TimeSpan.FromSeconds(3),
@@ -808,6 +811,12 @@ public sealed class RokidConnectionManager : IAsyncDisposable
             return false;
         }
 
+        if (!_r08ClosureAttempted && plaintextPorts.Count > 0 && plaintextPorts.All(p => p == "5555"))
+        {
+            _r08ClosureAttempted = true;
+            if (await new R08Compatibility(_adb, Path.GetDirectoryName(_watchdogFile)!)
+                .CloseLegacyListenerAsync(address, cancellationToken).ConfigureAwait(false)) return false;
+        }
         var wireless = await _adb.RunAsync(
             [
                 "-s", address, "shell", "settings", "get", "global",

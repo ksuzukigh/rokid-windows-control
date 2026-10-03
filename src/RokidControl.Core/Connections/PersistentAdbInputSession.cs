@@ -44,6 +44,66 @@ public sealed class PersistentAdbInputSession : IRokidInputSession
         return SendCommandAsync(":", cancellationToken);
     }
 
+    public async Task OpenLauncherShortcutAsync(
+        RokidControl.Core.Navigation.LauncherShortcut shortcut, int width, int height,
+        CancellationToken cancellationToken = default)
+    {
+        var local = Path.Combine(AppContext.BaseDirectory, "Resources", "rokid_ui_reader.jar");
+        const string remote = "/data/local/tmp/rokid_control_ui_reader.jar";
+        if (!File.Exists(local)) throw new IOException("Home操作位置の読取ファイルがありません。");
+        var runner = new RokidControl.Core.Processes.ProcessRunner(_environment);
+        var pushed = await runner.RunAsync(_adbPath, ["-s", _serial, "push", local, remote],
+            TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+        if (!pushed.Succeeded) throw new IOException("Home操作位置の読取を準備できませんでした。");
+        var expected = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            await File.ReadAllBytesAsync(local, cancellationToken).ConfigureAwait(false)));
+        var hash = await runner.RunAsync(_adbPath, ["-s", _serial, "shell", "sha256sum", remote],
+            TimeSpan.FromSeconds(3), cancellationToken).ConfigureAwait(false);
+        if (!hash.Succeeded || hash.Output.Trim().Split(' ')[0] != expected)
+            throw new IOException("Home操作位置の読取ファイルを検証できませんでした。");
+        await WakeHomeAsync(cancellationToken).ConfigureAwait(false);
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+            _launcherCache = null;
+            if (!await IsLauncherActiveAsync(cancellationToken).ConfigureAwait(false)) continue;
+            var result = await runner.RunAsync(_adbPath,
+                ["-s", _serial, "shell", $"CLASSPATH='{remote}' app_process / io.github.ksuzukigh.rokidcontrol.device.RokidUiReader"],
+                TimeSpan.FromSeconds(8), cancellationToken).ConfigureAwait(false);
+            var point = result.Succeeded ? RokidControl.Core.Navigation.LauncherIndicatorLocator.Locate(
+                result.Output, shortcut, width, height) : null;
+            if (point is null)
+            {
+                await WakeHomeAsync(cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+            await TapAsync(point.Value.X, point.Value.Y, cancellationToken).ConfigureAwait(false);
+            if (shortcut == RokidControl.Core.Navigation.LauncherShortcut.Applications)
+            {
+                var focused = await runner.RunAsync(_adbPath,
+                    ["-s", _serial, "shell", $"CLASSPATH='{remote}' app_process / io.github.ksuzukigh.rokidcontrol.device.RokidUiReader focus-apps"],
+                    TimeSpan.FromSeconds(8), cancellationToken).ConfigureAwait(false);
+                if (!focused.Succeeded)
+                {
+                    _log?.Invoke("アプリ一覧の入力先同期に失敗: " + focused.CombinedOutput.Trim());
+                    throw new IOException("アプリ一覧のキー入力先を確認できませんでした。もう一度Aを押してください。");
+                }
+                _log?.Invoke("表示中のアプリにキー入力先を同期");
+            }
+            return;
+        }
+        throw new IOException("現在のHome操作位置を確認できませんでした。もう一度お試しください。");
+    }
+
+    public async Task<bool> IsSystemAdjustmentActiveAsync(CancellationToken cancellationToken = default)
+    {
+        var output = await ExecuteCommandAsync("dumpsys activity activities", cancellationToken).ConfigureAwait(false);
+        return output.Split('\n').Any(line =>
+            (line.Contains("topResumedActivity=") || line.TrimStart().StartsWith("mResumedActivity:") || line.TrimStart().StartsWith("ResumedActivity:")) &&
+            System.Text.RegularExpressions.Regex.IsMatch(line,
+                @"com\.rokid\.os\.sprite\.launcher/(?:com\.rokid\.os\.sprite\.launcher)?\.page\.(?:volume\.SettingVolumeActivity|brightness\.SettingBrightnessActivity)[\s}]"));
+    }
+
     public Task SendKeyEventAsync(
         string androidKey,
         CancellationToken cancellationToken = default)
@@ -108,7 +168,7 @@ public sealed class PersistentAdbInputSession : IRokidInputSession
         _launcherCache = null;
         return SendCommandAsync(
             "input keyevent KEYCODE_WAKEUP && " +
-            "input keyevent KEYCODE_HOME",
+            "sleep 0.15 && input keyevent KEYCODE_HOME",
             cancellationToken);
     }
 

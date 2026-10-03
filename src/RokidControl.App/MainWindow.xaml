@@ -123,10 +123,11 @@
               Background="Black"
               Visibility="Collapsed">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
-            <Border Grid.Row="0"
+            <Border Grid.Row="2"
                     Height="34"
                     Background="#F217211D"
                     BorderBrush="#384C43"
@@ -168,29 +169,12 @@
                                Margin="8,0,0,0" />
                 </Grid>
             </Border>
-            <Grid Grid.Row="1">
+            <Grid Grid.Row="0">
                 <Image x:Name="LiveImage"
                        Stretch="Uniform"
                        SnapsToDevicePixels="True"
                        MouseLeftButtonDown="LiveImage_MouseLeftButtonDown"
                        MouseRightButtonDown="LiveImage_MouseRightButtonDown" />
-                <Border x:Name="KeyboardHint"
-                        Visibility="Visible"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Top"
-                        Margin="12"
-                        Padding="14,7"
-                        CornerRadius="7"
-                        Background="#E00D1311"
-                        BorderBrush="#64D2FF"
-                        BorderThickness="1"
-                        IsHitTestVisible="False">
-                    <TextBlock x:Name="KeyboardHintText"
-                               Text="{x:Static navigation:NavigationHintText.Normal}"
-                               Foreground="White"
-                               FontSize="13"
-                               FontWeight="SemiBold" />
-                </Border>
                 <Border x:Name="LiveStatus"
                         Visibility="Collapsed"
                         HorizontalAlignment="Center"
@@ -210,6 +194,31 @@
                                TextWrapping="Wrap" />
                 </Border>
             </Grid>
+                <Border Grid.Row="1" x:Name="KeyboardHint"
+                        Visibility="Visible"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Top"
+                        Margin="0"
+                        Padding="14,7"
+                        CornerRadius="7"
+                        Background="#E00D1311"
+                        BorderBrush="#64D2FF"
+                        BorderThickness="1"
+                        IsHitTestVisible="True">
+                    <StackPanel>
+                    <StackPanel x:Name="NavigationButtons" Orientation="Horizontal" HorizontalAlignment="Center">
+                        <Button Content="M メモ" Tag="Memo" Click="NavigationButton_Click" Padding="8,3" Margin="3" Focusable="False" Foreground="White" Background="#174F70" />
+                        <Button Content="H Home" Tag="Home" Click="NavigationButton_Click" Padding="8,3" Margin="3" Focusable="False" Foreground="White" Background="#174F70" />
+                        <Button Content="A アプリ" Tag="Applications" Click="NavigationButton_Click" Padding="8,3" Margin="3" Focusable="False" Foreground="White" Background="#174F70" />
+                    </StackPanel>
+                    <TextBlock x:Name="KeyboardHintText"
+                               Visibility="Collapsed"
+                               Text="{x:Static navigation:NavigationHintText.Normal}"
+                               Foreground="White"
+                               FontSize="13"
+                               FontWeight="SemiBold" />
+                    </StackPanel>
+                </Border>
         </Grid>
     </Grid>
 </Window>

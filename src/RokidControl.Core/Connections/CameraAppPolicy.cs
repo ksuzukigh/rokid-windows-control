@@ -6,6 +6,7 @@ public static class CameraAppPolicy
     [
         "com.rokid.os.sprite.assistserver",
         "com.android.camera2",
+        "io.github.ksuzukigh.rokidzoomincamera",
     ];
 
     public static bool IsOriginalCameraForeground(string output)
