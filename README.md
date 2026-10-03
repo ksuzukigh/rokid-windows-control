@@ -4,9 +4,9 @@ Rokid AI Glasses RV101の画面をWindowsに表示し、Windowsのマウスと�
 
 ![WindowsからRokid AI Glassesを操作するイメージ](docs/images/mac-control-overview.png)
 
-**更新候補版: 0.2.0-rc.2（Mac版1.2.7追従・一覧の初回キー操作を修正）**
+**正式版: 0.2.0（Mac版1.2.7追従・一覧の初回キー操作を修正）**
 
-[更新候補版 0.2.0-rc.2 をダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/tag/v0.2.0-rc.2) · [正式版 0.1.0](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)
+[最新版 0.2.0 をダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)
 
 [今回の変更と実機確認](docs/UPDATE-2026-10-03.md)を参照してください。
 
@@ -93,7 +93,7 @@ Rokidを再起動したあともケーブルなしで接続したい場合は、
 
 ### 1. Rokid Controlをダウンロードする
 
-[更新候補版 0.2.0-rc.2](https://github.com/ksuzukigh/rokid-windows-control/releases/tag/v0.2.0-rc.2)には、このREADMEで紹介するMac版1.2.7対応とキー操作の修正が含まれます。[正式版 0.1.0](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)も利用できます。
+[最新版のRokid Control for Windowsをダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)します。正式版0.2.0には、このREADMEで紹介するMac版1.2.7対応とキー操作の修正が含まれます。
 
 リリースページにある`Rokid-Control-Windows-x64-<version>.zip`をダウンロードします。
 
@@ -234,7 +234,7 @@ Windows版は.NET 10 SDKで作成しています。開発用のビルド、検�
 ```powershell
 .\tools\verify.ps1
 .\tools\prepare-vendor.ps1
-.\tools\package.ps1 -Version 0.2.0-rc.2
+.\tools\package.ps1 -Version 0.2.0
 ```
 
 仕様は[仕様書](docs/SPECIFICATION.md)、検証結果は[技術試験計画](docs/TECHNICAL-TEST-PLAN.md)、配布方針は[配布方針](docs/CODE-SIGNING.md)を参照してください。
