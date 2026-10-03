@@ -5,6 +5,20 @@ using RokidControl.Core.Processes;
 
 var tests = new List<(string Name, Action Run)>
 {
+    ("Current launcher bounds and unsafe XML", () =>
+    {
+        const string xml = "<hierarchy><node package=\"com.rokid.os.sprite.launcher\" resource-id=\"com.rokid.os.sprite.launcher:id/indicator\" enabled=\"true\" clickable=\"true\" bounds=\"[192,360][288,400]\"/></hierarchy>";
+        AssertEqual(new DevicePoint(208, 380), LauncherIndicatorLocator.Locate(xml, LauncherShortcut.Memo, 480, 640)!.Value, "Memo follows current bounds");
+        AssertEqual(new DevicePoint(272, 380), LauncherIndicatorLocator.Locate(xml, LauncherShortcut.Applications, 480, 640)!.Value, "Apps follows current bounds");
+        Assert(LauncherIndicatorLocator.Locate(xml.Replace("[288,400]", "[999,400]"), LauncherShortcut.Home, 480, 640) == null, "Offscreen rejected");
+        Assert(LauncherIndicatorLocator.Locate("<!DOCTYPE hierarchy>" + xml, LauncherShortcut.Home, 480, 640) == null, "DTD rejected");
+        Assert(LauncherIndicatorLocator.Locate(xml.Replace("</hierarchy>", xml + "</hierarchy>"), LauncherShortcut.Home, 480, 640) == null, "Ambiguous bounds rejected");
+    }),
+    ("ZOOM IN CAMERA foreground and history", () =>
+    {
+        Assert(CameraAppPolicy.IsOriginalCameraForeground("mResumedActivity: ActivityRecord{ io.github.ksuzukigh.rokidzoomincamera/.MainActivity }"), "Zoom switches color");
+        Assert(!CameraAppPolicy.IsOriginalCameraForeground("Hist #0: io.github.ksuzukigh.rokidzoomincamera/.MainActivity"), "History must not switch color");
+    }),
     ("Window focus click policy", TestPointerSelectionPolicy),
     ("Window focus click state", TestFocusRestoringPointerState),
     ("Direct shortcut debouncing", TestKeyboardShortcutDebouncer),

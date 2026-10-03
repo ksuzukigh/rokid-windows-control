@@ -34,6 +34,8 @@ internal sealed record AppResources(
                      resources.ScrcpyPath,
                      resources.ScrcpyServerPath,
                      resources.WatchdogPath,
+                     Path.Combine(AppContext.BaseDirectory, "Resources", "rokid_ui_reader.jar"),
+                     Path.Combine(AppContext.BaseDirectory, "Resources", "rokid_r08_direction_bridge.sh"),
                  })
         {
             if (!File.Exists(path))

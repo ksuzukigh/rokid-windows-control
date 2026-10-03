@@ -38,6 +38,7 @@ if (-not (Test-Path -LiteralPath $dotnet)) {
 $watchdogSource = Join-Path $repoRoot `
     'src\RokidControl.App\Resources\rokid_windows_wifi_watchdog.sh'
 Assert-UnixLineEndings -Path $watchdogSource
+Assert-UnixLineEndings -Path (Join-Path $repoRoot 'src\RokidControl.App\Resources\rokid_r08_direction_bridge.sh')
 
 $vendor = Join-Path $repoRoot 'vendor\scrcpy\scrcpy.exe'
 if (-not (Test-Path -LiteralPath $vendor)) {
@@ -75,6 +76,8 @@ $requiredFiles = @(
     (Join-Path $output 'vendor\scrcpy\adb.exe'),
     (Join-Path $output 'vendor\scrcpy\scrcpy.exe'),
     (Join-Path $output 'Resources\rokid_windows_wifi_watchdog.sh'),
+    (Join-Path $output 'Resources\rokid_ui_reader.jar'),
+    (Join-Path $output 'Resources\rokid_r08_direction_bridge.sh'),
     (Join-Path $output 'Licenses\Rokid-Control-LICENSE'),
     (Join-Path $output 'Licenses\THIRD-PARTY-NOTICES.md')
 )
@@ -87,5 +90,6 @@ foreach ($requiredFile in $requiredFiles) {
 $publishedWatchdog = Join-Path $output `
     'Resources\rokid_windows_wifi_watchdog.sh'
 Assert-UnixLineEndings -Path $publishedWatchdog
+Assert-UnixLineEndings -Path (Join-Path $output 'Resources\rokid_r08_direction_bridge.sh')
 
 Write-Host "Published self-contained Windows x64 package to $output"

@@ -96,7 +96,7 @@ public sealed class KeyboardCommandProcessor
         string androidKey,
         CancellationToken cancellationToken)
     {
-        if (!IsApplicationMenuActive())
+        if (!IsApplicationMenuActive() && !await _input.IsSystemAdjustmentActiveAsync(cancellationToken).ConfigureAwait(false))
         {
             _log?.Invoke($"方向キーを無視（アプリ一覧の外） {androidKey}");
             return;
@@ -109,10 +109,10 @@ public sealed class KeyboardCommandProcessor
         LauncherShortcut shortcut,
         CancellationToken cancellationToken)
     {
-        var point = shortcut.GetDevicePoint(_screenWidth, _screenHeight);
-        await _input.WakeHomeAndTapAsync(
-            point.X,
-            point.Y,
+        await _input.OpenLauncherShortcutAsync(
+            shortcut,
+            _screenWidth,
+            _screenHeight,
             cancellationToken).ConfigureAwait(false);
         _log?.Invoke($"{shortcut.GetTitle()}を開く");
     }

@@ -90,8 +90,9 @@ internal sealed class LiveSessionController : IDisposable
         cancellationToken = _sessionCancellation.Token;
 
         progress.Report("カメラ映像を受信しています…");
+        var cameraAlreadyOpen = await _originalCameraForegroundProbe(cancellationToken).ConfigureAwait(false) == true;
         Exception? cameraError = null;
-        for (var attempt = 1; attempt <= 15; attempt++)
+        for (var attempt = 1; !cameraAlreadyOpen && attempt <= 15; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
@@ -123,7 +124,7 @@ internal sealed class LiveSessionController : IDisposable
             }
         }
 
-        if (_cameraCapture is null)
+        if (_cameraCapture is null && !cameraAlreadyOpen)
         {
             throw cameraError ??
                 new InvalidOperationException(
@@ -167,6 +168,12 @@ internal sealed class LiveSessionController : IDisposable
             throw hudError ??
                 new InvalidOperationException(
                     "HUD画面を開始できませんでした。");
+        }
+        if (cameraAlreadyOpen)
+        {
+            EnterOriginalCameraScreenMode();
+            Volatile.Write(ref _cameraRecoveryActive, 1);
+            _cameraRecoveryTask = RecoverCameraAsync(new InvalidOperationException("カメラ画面から開始"), cancellationToken);
         }
     }
 

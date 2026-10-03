@@ -55,6 +55,11 @@ internal sealed class WindowsKeyboardController : IDisposable
     public event Action? QuitRequested;
 
     public event Action<bool>? ApplicationMenuModeChanged;
+    public void QueueCommand(KeyboardCommand command)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _actions.Writer.TryWrite(new QueuedAction(command));
+    }
 
     public void Start(int targetProcessId)
     {

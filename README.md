@@ -4,9 +4,11 @@ Rokid AI Glasses RV101の画面をWindowsに表示し、Windowsのマウスと�
 
 ![WindowsからRokid AI Glassesを操作するイメージ](docs/images/mac-control-overview.png)
 
-**現在のバージョン: 0.1.0**
+**更新候補版: 0.2.0-rc.2（Mac版1.2.7追従・一覧の初回キー操作を修正）**
 
-[最新版をダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)
+[更新候補版 0.2.0-rc.2 をダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/tag/v0.2.0-rc.2) · [正式版 0.1.0](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)
+
+[今回の変更と実機確認](docs/UPDATE-2026-10-03.md)を参照してください。
 
 ## できること
 
@@ -14,10 +16,17 @@ Rokid AI Glasses RV101の画面をWindowsに表示し、Windowsのマウスと�
 - WindowsのマウスとキーボードでRokidを操作する
 - 「ライブ映像」と「背景なし（省電力）」を選べる
 - USBとWi-Fiの両方で接続できる
-- 純正「カメラ」とテンプル右上ボタンの2種類の撮影方法が使える
+- 純正「カメラ」、Rokid ZOOM IN CAMERA、テンプル右上ボタンが使える
+- 映像の下のM・H・Aボタンからメモ・Home・アプリ一覧を開ける
+- 現行YodaOSのHome操作位置を読み取り、音量・明るさを左右キーで調整できる
+- 準備済みR08 Access Bridge 2.0.1の操作補助と併用できる
 - Wi-Fi切断やカメラ使用後に自動でつなぎ直す
 
 ### ライブ映像
+
+操作ボタン・案内と見やすさ調整は、映像とは別の下部欄に表示します。
+
+[Rokid ZOOM IN CAMERA](https://github.com/ksuzukigh/rokid-zoom-in-camera)にも対応し、倍率や録画時間を含むカラー画面へ切り替えます。カメラは`Esc`で閉じてライブ映像へ戻ります。Homeへ移るだけでは純正カメラが撮影を継続する場合があります。
 
 Rokidのカメラ映像を背景にして、Rokidの文字やアイコンを重ねて表示します。
 
@@ -33,9 +42,9 @@ Rokid純正の「カメラ」を開くと、Windowsの表示もフルカラー�
 
 ![背景なし（省電力）でRokidの文字やアイコンを表示した例](docs/images/rokid-control-connected.png)
 
-### 2種類の撮影方法
+### 撮影方法
 
-Rokid Controlを開いたまま、用途に合わせて2種類の撮影方法を使い分けられます。「ライブ映像」と「背景なし（省電力）」のどちらでも撮影できます。
+Rokid Controlを開いたまま、用途に合わせて撮影方法を使い分けられます。「ライブ映像」と「背景なし（省電力）」のどちらでも撮影できます。
 
 **緑のHUDでも、純正カメラの撮影画面はフルカラー**
 
@@ -84,7 +93,7 @@ Rokidを再起動したあともケーブルなしで接続したい場合は、
 
 ### 1. Rokid Controlをダウンロードする
 
-[最新版のRokid Control for Windowsをダウンロード](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)します。
+[更新候補版 0.2.0-rc.2](https://github.com/ksuzukigh/rokid-windows-control/releases/tag/v0.2.0-rc.2)には、このREADMEで紹介するMac版1.2.7対応とキー操作の修正が含まれます。[正式版 0.1.0](https://github.com/ksuzukigh/rokid-windows-control/releases/latest)も利用できます。
 
 リリースページにある`Rokid-Control-Windows-x64-<version>.zip`をダウンロードします。
 
@@ -146,13 +155,15 @@ Windowsに表示されたRokidの画面を一度クリックしてから操作�
 | `H` | Homeを開く |
 | `A` | アプリ一覧を開く |
 | `Esc` | 一つ前に戻る |
-| `←` / `→` | `A`を押したあと、アプリを選ぶ |
+| `←` / `→` | `A`を押したあと、アプリを選ぶ。純正の音量・明るさ画面では値を調整する |
 | `Enter` | `A`を押したあと、選んだアプリを開く |
 | `Ctrl` + `Q` | Rokid Controlを終了 |
 
 `M`・`H`・`A`は、Rokidがどの画面を表示していても、1回押すだけでその項目を開きます。
 
 `A`でアプリ一覧を開くと、左右キーと`Enter`が使えるようになります。アプリを開いて`Esc`で一覧へ戻ったあとも、そのまま左右キーで選び直せます。`H`、`M`、またはライブ映像を直接操作すると、アプリ選びを終えます。
+
+一覧を開いた直後から、画面に表示されている選択を基準に左右キーで移動し、`Enter`でそのアプリを開けます。
 
 ## うまく接続できないとき
 
@@ -223,7 +234,7 @@ Windows版は.NET 10 SDKで作成しています。開発用のビルド、検�
 ```powershell
 .\tools\verify.ps1
 .\tools\prepare-vendor.ps1
-.\tools\package.ps1 -Version 0.1.0
+.\tools\package.ps1 -Version 0.2.0-rc.2
 ```
 
 仕様は[仕様書](docs/SPECIFICATION.md)、検証結果は[技術試験計画](docs/TECHNICAL-TEST-PLAN.md)、配布方針は[配布方針](docs/CODE-SIGNING.md)を参照してください。

@@ -161,11 +161,25 @@ internal sealed class StandardNavigationOverlay : IDisposable
                 NativeMethods.GetDpiForWindow(overlayHandle),
                 96);
             var pixelsPerDip = dpi / 96d;
-            _window.Left =
-                (clientOrigin.X + clientWidth / 2d) / pixelsPerDip -
-                OverlayWidth / 2d;
-            _window.Top =
-                (clientOrigin.Y + 12) / pixelsPerDip;
+            var monitor = NativeMethods.MonitorFromWindow(targetWindow, 2);
+            var info = new NativeMethods.MonitorInfo { Size = Marshal.SizeOf<NativeMethods.MonitorInfo>() };
+            if (!NativeMethods.GetMonitorInfo(monitor, ref info) || !NativeMethods.GetWindowRect(targetWindow, out var bounds))
+            {
+                _window.Hide();
+                return;
+            }
+            var workArea = new Rect(info.Work.Left / pixelsPerDip, info.Work.Top / pixelsPerDip,
+                (info.Work.Right - info.Work.Left) / pixelsPerDip, (info.Work.Bottom - info.Work.Top) / pixelsPerDip);
+            if (workArea.Width < OverlayWidth)
+            {
+                _window.Hide();
+                return;
+            }
+            _window.Left = Math.Clamp((clientOrigin.X + clientWidth / 2d) / pixelsPerDip - OverlayWidth / 2d,
+                workArea.Left, workArea.Right - OverlayWidth);
+            _window.Top = bounds.Bottom / pixelsPerDip + 8;
+            if (_window.Top + OverlayHeight > workArea.Bottom) _window.Top = bounds.Top / pixelsPerDip - OverlayHeight - 8;
+            if (_window.Top < workArea.Top) { _window.Hide(); return; }
             if (!_window.IsVisible)
             {
                 _window.Show();
@@ -183,6 +197,22 @@ internal sealed class StandardNavigationOverlay : IDisposable
 
     private static class NativeMethods
     {
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct MonitorInfo
+        {
+            internal int Size;
+            internal NativeRect Monitor;
+            internal NativeRect Work;
+            internal uint Flags;
+        }
+        [DllImport("user32.dll")]
+        internal static extern nint MonitorFromWindow(nint window, uint flags);
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetWindowRect(nint window, out NativeRect rect);
         [StructLayout(LayoutKind.Sequential)]
         internal struct NativeRect
         {
