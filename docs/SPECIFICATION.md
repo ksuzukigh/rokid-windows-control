@@ -4,7 +4,7 @@
 
 - 対象製品: Rokid Control for Windows
 - 初期製品バージョン: 0.1.0
-- 現在の更新候補: 0.2.0-rc.2
+- 現在の正式版: 0.2.0
 - 対応元: Rokid Control for macOS 1.2.7
 - 対象機器: Rokid AI Glasses RV101
 - 文書状態: 実装開始版
